@@ -60,18 +60,16 @@ function negative(n){
   const w=$(`<div class="fade" style="text-align:left">
     <p class="lead" style="margin-top:20px;text-align:center">Gracias por tu sinceridad 🙏<br>Contanos qué pasó — lo lee el encargado en privado, no se publica.</p>
     <div class="field"><label for="cmt">¿Qué podríamos mejorar?</label><textarea id="cmt" rows="4" placeholder="Ej: el pedido llegó frío / faltó un producto..."></textarea></div>
-    <div class="field"><label for="ct">Tu contacto (opcional)</label><input id="ct" type="text" placeholder="Nombre o teléfono, si querés que te respondamos" /></div>
     <p class="error" id="err"></p>
   </div>`);
   const send=$(`<button class="btn btn-primary">Enviar en privado</button>`);
   send.addEventListener("click",async ()=>{
     const comentario=w.querySelector("#cmt").value.trim();
-    const contacto=w.querySelector("#ct").value.trim();
     const err=w.querySelector("#err");
     if(!comentario){ err.textContent="Contanos brevemente qué pasó 🙏"; return; }
     send.disabled=true; send.textContent="Enviando...";
     if(!sb){ err.textContent="Falta configurar Supabase en config.js"; send.disabled=false; send.textContent="Enviar en privado"; return; }
-    const { error } = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, contacto: contacto||null });
+    const { error } = await sb.from("resenas_negativas").insert({ estrellas:n, comentario });
     if(error){ err.textContent="No se pudo enviar. Probá de nuevo en un momento."; send.disabled=false; send.textContent="Enviar en privado"; return; }
     w.innerHTML=`<p class="lead fade" style="margin-top:24px;text-align:center">¡Gracias por avisarnos! 🌿<br>Lo vamos a tener muy en cuenta.</p>`;
   });
