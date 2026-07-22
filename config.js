@@ -3,11 +3,11 @@
    (los sacás de Supabase → Project Settings → API)
    ============================================================ */
 window.KUYEN = {
-  // 1) URL del proyecto (ej: https://abcdxyz.supabase.co)
-  SUPABASE_URL: "",
+  // 1) URL del proyecto
+  SUPABASE_URL: "https://mkcnpkrybdcgwtnnrmao.supabase.co",
 
-  // 2) Clave pública "anon" (es segura de exponer, la protección está en las políticas)
-  SUPABASE_ANON_KEY: "",
+  // 2) Clave pública (publishable) — segura de exponer, la protección está en las políticas (RLS)
+  SUPABASE_ANON_KEY: "sb_publishable_EevmQ11nv4Oip_GZ6k9-yg_V-9MYLGP",
 
   // Link de reseñas de Google (ya cargado)
   GOOGLE_REVIEW_URL: "https://g.page/r/CaGAeTZIL71EEBM/review",
