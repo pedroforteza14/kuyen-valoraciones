@@ -44,7 +44,7 @@ async function boot(){
 /* ---------------- LOGIN ---------------- */
 function renderLogin(){
   if(channel){ sb.removeChannel(channel); channel=null; }
-  app.innerHTML=""; app.appendChild(brand());
+  app.innerHTML=""; app.className="wrap"; app.appendChild(brand());
   const card=$(`<div class="card fade">
     <span class="badge">Panel del local</span>
     <h2>Iniciá sesión</h2>
@@ -69,7 +69,7 @@ function renderLogin(){
 
 /* ---------------- PANEL ---------------- */
 async function renderPanel(session){
-  app.innerHTML=""; app.appendChild(brand());
+  app.innerHTML=""; app.className="wrap wide"; app.appendChild(brand());
   app.appendChild($(`<div class="topbar"><span class="who">👤 ${esc(session.user.email)}</span><button class="linkbtn" id="out">Cerrar sesión</button></div>`));
   if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); }
 
@@ -115,7 +115,13 @@ async function renderPanel(session){
     <p class="note" id="cfgMsg"></p>
   </div>`);
 
-  app.appendChild(sendCard); app.appendChild(mcard); app.appendChild(negCard); app.appendChild(histCard); app.appendChild(cfgCard);
+  const grid=$(`<div class="panel-grid"></div>`);
+  const colL=$(`<div class="col"></div>`);
+  const colR=$(`<div class="col"></div>`);
+  colL.appendChild(sendCard); colL.appendChild(negCard);
+  colR.appendChild(mcard); colR.appendChild(histCard); colR.appendChild(cfgCard);
+  grid.appendChild(colL); grid.appendChild(colR);
+  app.appendChild(grid);
   app.appendChild($(`<p class="foot">Link del cliente: <a href="${ratingUrl}" target="_blank" rel="noopener">${ratingUrl}</a></p>`));
 
   document.getElementById("out").addEventListener("click",async()=>{ await sb.auth.signOut(); renderLogin(); });

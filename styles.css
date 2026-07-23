@@ -78,8 +78,17 @@ textarea:focus,input:focus{outline:2px solid var(--leaf);outline-offset:1px;bord
 .chip.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);}
 .mini{font-size:12.5px;padding:8px 12px;width:auto;}
 
+/* layout dashboard del panel */
+.wrap.wide{max-width:960px;}
+.panel-grid{display:flex;flex-direction:column;gap:16px;}
+.panel-grid .col{display:flex;flex-direction:column;gap:16px;min-width:0;}
+.panel-grid .card{margin-bottom:0;}
+@media(min-width:820px){
+  .panel-grid{display:grid;grid-template-columns:1fr 1fr;align-items:start;}
+}
+
 /* métricas */
-.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:10px;}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
 .tile .n{font-family:var(--font-display);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1;color:var(--leaf-deep);}
 .tile .l{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
