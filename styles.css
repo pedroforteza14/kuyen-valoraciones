@@ -12,7 +12,7 @@ body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family
   display:flex;align-items:flex-start;justify-content:center;padding:30px 18px 60px;-webkit-font-smoothing:antialiased;}
 .wrap{width:100%;max-width:460px;}
 .brand{text-align:center;margin-bottom:18px;}
-.logo{width:250px;max-width:82%;height:auto;display:block;margin:0 auto;}
+.logo{height:145px;width:auto;max-width:88%;display:block;margin:0 auto;}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px 24px;margin-bottom:16px;}
 .card.center{text-align:center;}
