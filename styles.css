@@ -84,6 +84,23 @@ textarea:focus,input:focus{outline:2px solid var(--leaf);outline-offset:1px;bord
 .chip.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);}
 .mini{font-size:12.5px;padding:8px 12px;width:auto;}
 
+/* métricas */
+.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+.tile .n{font-family:var(--font-display);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.1;color:var(--leaf-deep);}
+.tile .l{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
+.tile.warn-tile .n{color:var(--danger);}
+
+/* filtros */
+.filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.chipbtn{background:var(--bg);border:1px solid var(--line);color:var(--ink-soft);font-size:12.5px;font-weight:600;padding:6px 13px;border-radius:100px;cursor:pointer;font-family:var(--font-body);}
+.chipbtn:hover{border-color:var(--leaf);}
+.chipbtn.active{background:var(--leaf);color:#fff;border-color:var(--leaf);}
+
+/* nota interna */
+.neg-nota-row{display:flex;gap:8px;margin-top:10px;align-items:center;}
+.neg-nota{flex:1;font-size:13px;padding:8px 11px;}
+
 .foot{text-align:center;margin-top:6px;font-size:12px;color:var(--ink-soft);}
 .foot a{color:var(--leaf-deep);}
 .fade{animation:fade .3s ease;}

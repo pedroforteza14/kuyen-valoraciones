@@ -20,13 +20,16 @@ const $=(h)=>{const t=document.createElement("template");t.innerHTML=h.trim();re
 const app=document.getElementById("app");
 const fmtWhen=(iso)=>{const d=new Date(iso);return d.toLocaleDateString("es-AR")+" · "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});};
 const clean=(s)=>String(s||"").replace(/[^\d]/g,"");
+const esc=(s)=>String(s==null?"":s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
 
 const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 10 4 20c0 0 6-1 10-5 3-3 5-7 6-11ZM7 17c1-4 4-7 8-9"/></svg>`;
 const waLogo=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2s-.7 1-.9 1.2c-.2.2-.3.2-.6.1-1.7-.8-2.8-1.5-3.9-3.4-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 2 .8 2.7.9 3.7.8.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3ZM12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z"/></svg>`;
 
-let historial=[], negativas=[], channel=null;
+let cfg={ google_review_url:C.GOOGLE_REVIEW_URL, whatsapp_template:C.WHATSAPP_TEMPLATE };
+let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas";
 
 function brand(){ return $(`<div class="brand"><div class="mark">${LEAF}</div><h1>${C.BUSINESS_NAME}</h1><p class="sub">${C.TAGLINE}</p></div>`); }
+function beep(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g);g.connect(audioCtx.destination); o.type="sine";o.frequency.value=680;g.gain.value=0.08;o.start(); o.frequency.setValueAtTime(880,audioCtx.currentTime+0.12); setTimeout(()=>o.stop(),300);}catch(e){} }
 
 /* ---------------- ARRANQUE ---------------- */
 async function boot(){
@@ -52,6 +55,7 @@ function renderLogin(){
   const email=card.querySelector("#email"), pass=card.querySelector("#pass"), btn=card.querySelector("#in"), err=card.querySelector("#err");
   async function submit(){
     err.textContent=""; btn.disabled=true; btn.textContent="Entrando...";
+    try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
     const { data, error } = await sb.auth.signInWithPassword({ email:email.value.trim(), password:pass.value });
     if(error){ err.textContent="Usuario o contraseña incorrectos."; btn.disabled=false; btn.textContent="Entrar"; return; }
     renderPanel(data.session);
@@ -63,11 +67,14 @@ function renderLogin(){
 /* ---------------- PANEL ---------------- */
 async function renderPanel(session){
   app.innerHTML=""; app.appendChild(brand());
-  app.appendChild($(`<div class="topbar"><span class="who">👤 ${session.user.email}</span><button class="linkbtn" id="out">Cerrar sesión</button></div>`));
+  app.appendChild($(`<div class="topbar"><span class="who">👤 ${esc(session.user.email)}</span><button class="linkbtn" id="out">Cerrar sesión</button></div>`));
+  if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); }
 
   const ratingUrl = location.origin + "/";
-  const msg = C.WHATSAPP_TEMPLATE.replace("{link}", ratingUrl);
 
+  // MÉTRICAS
+  const mcard=$(`<div class="card"><div class="sec-title">Resumen del mes</div><div class="metrics" id="metrics"></div></div>`);
+  // PEDIR VALORACIÓN
   const sendCard=$(`<div class="card">
     <span class="badge">Pedir valoración</span>
     <h2>Mandar por WhatsApp</h2>
@@ -76,28 +83,47 @@ async function renderPanel(session){
       <input id="tel" type="tel" inputmode="tel" placeholder="Ej: 5491122334455" autocomplete="off" />
       <p class="already" id="dupe"></p>
     </div>
-    <div class="field"><label>Vista previa del mensaje</label><div class="msg-preview">${msg.replace(/</g,"&lt;")}</div></div>
+    <div class="field"><label>Vista previa del mensaje</label><div class="msg-preview" id="prev"></div></div>
     <button class="btn btn-wa" id="waBtn">${waLogo}<span>Enviar por WhatsApp</span></button>
     <p class="note">Se abre WhatsApp con el mensaje listo. Vos tocás enviar. ✋</p>
   </div>`);
-
+  // NEGATIVAS
   const negCard=$(`<div class="card">
     <div class="sec-title">Reseñas negativas <span class="count" id="ncount">0</span></div>
+    <div class="filters" id="filters">
+      <button class="chipbtn" data-f="todas">Todas</button>
+      <button class="chipbtn" data-f="pendientes">Pendientes</button>
+      <button class="chipbtn" data-f="resueltas">Resueltas</button>
+    </div>
     <div class="list" id="nlist"><p class="empty">Cargando...</p></div>
   </div>`);
-
+  // HISTORIAL
   const histCard=$(`<div class="card">
     <div class="sec-title">Historial de envíos <span class="count" id="hcount">0</span></div>
     <div class="list" id="hlist"><p class="empty">Cargando...</p></div>
     <button class="btn btn-ghost" id="hcopy" style="margin-top:14px">Copiar historial</button>
   </div>`);
+  // CONFIGURACIÓN
+  const cfgCard=$(`<div class="card">
+    <div class="sec-title">Configuración</div>
+    <div class="field"><label for="gurl">Link de reseñas de Google</label><input id="gurl" type="url" placeholder="https://g.page/r/.../review" /></div>
+    <div class="field"><label for="wtpl">Mensaje de WhatsApp <span style="font-weight:400;color:var(--ink-soft)">(usá {link} donde va el link)</span></label><textarea id="wtpl" rows="5"></textarea></div>
+    <button class="btn btn-primary" id="cfgSave">Guardar cambios</button>
+    <p class="note" id="cfgMsg"></p>
+  </div>`);
 
-  app.appendChild(sendCard); app.appendChild(negCard); app.appendChild(histCard);
+  app.appendChild(mcard); app.appendChild(sendCard); app.appendChild(negCard); app.appendChild(histCard); app.appendChild(cfgCard);
   app.appendChild($(`<p class="foot">Link del cliente: <a href="${ratingUrl}" target="_blank" rel="noopener">${ratingUrl}</a></p>`));
 
   document.getElementById("out").addEventListener("click",async()=>{ await sb.auth.signOut(); renderLogin(); });
 
+  // filtros
+  negCard.querySelectorAll(".chipbtn").forEach(b=>b.addEventListener("click",()=>{ filtro=b.dataset.f; renderNeg(); }));
+
+  // envío WhatsApp
   const tel=sendCard.querySelector("#tel"), dupe=sendCard.querySelector("#dupe");
+  function buildMsg(){ return (cfg.whatsapp_template||C.WHATSAPP_TEMPLATE).replace("{link}", ratingUrl); }
+  function refreshPrev(){ sendCard.querySelector("#prev").textContent = buildMsg(); }
   tel.addEventListener("input",()=>{
     const n=clean(tel.value);
     const prev=historial.filter(r=>clean(r.telefono)===n);
@@ -106,12 +132,13 @@ async function renderPanel(session){
   sendCard.querySelector("#waBtn").addEventListener("click",async()=>{
     const n=clean(tel.value);
     if(!n){ tel.focus(); tel.style.borderColor="var(--danger)"; return; }
-    window.open(`https://wa.me/${n}?text=${encodeURIComponent(msg)}`,"_blank","noopener");
-    const { data, error } = await sb.from("envios").insert({ telefono:n }).select();
-    if(!error && data){ historial.unshift(data[0]); renderHist(); }
+    window.open(`https://wa.me/${n}?text=${encodeURIComponent(buildMsg())}`,"_blank","noopener");
+    const { data } = await sb.from("envios").insert({ telefono:n }).select();
+    if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); }
     tel.value=""; dupe.textContent="";
   });
 
+  // copiar historial
   histCard.querySelector("#hcopy").addEventListener("click",async(e)=>{
     if(!historial.length){ e.target.textContent="Nada que copiar"; setTimeout(()=>e.target.textContent="Copiar historial",1600); return; }
     const text="Número\tFecha y hora\n"+historial.map(r=>`${r.telefono}\t${fmtWhen(r.creado_at)}`).join("\n");
@@ -119,17 +146,54 @@ async function renderPanel(session){
     setTimeout(()=>e.target.textContent="Copiar historial",1600);
   });
 
+  // guardar config
+  cfgCard.querySelector("#cfgSave").addEventListener("click",async(e)=>{
+    const gurl=cfgCard.querySelector("#gurl").value.trim();
+    const wtpl=cfgCard.querySelector("#wtpl").value;
+    const msg=cfgCard.querySelector("#cfgMsg");
+    e.target.disabled=true; e.target.textContent="Guardando...";
+    const { error } = await sb.from("config").update({ google_review_url:gurl, whatsapp_template:wtpl }).eq("id",1);
+    e.target.disabled=false; e.target.textContent="Guardar cambios";
+    if(error){ msg.textContent="No se pudo guardar."; return; }
+    cfg.google_review_url=gurl; cfg.whatsapp_template=wtpl; refreshPrev();
+    msg.textContent="¡Guardado! ✓ (aplica para todo el equipo)"; setTimeout(()=>msg.textContent="",2500);
+  });
+
   await loadData();
+  cfgCard.querySelector("#gurl").value = cfg.google_review_url||"";
+  cfgCard.querySelector("#wtpl").value = cfg.whatsapp_template||C.WHATSAPP_TEMPLATE;
+  refreshPrev();
   subscribeRealtime();
 }
 
 async function loadData(){
-  const [h,n] = await Promise.all([
+  const [cf,h,n,v] = await Promise.all([
+    sb.from("config").select("*").eq("id",1).single(),
     sb.from("envios").select("*").order("creado_at",{ascending:false}),
     sb.from("resenas_negativas").select("*").order("creado_at",{ascending:false}),
+    sb.from("valoraciones").select("estrellas,creado_at").order("creado_at",{ascending:false}),
   ]);
-  historial = h.data||[]; negativas = n.data||[];
-  renderHist(); renderNeg();
+  if(cf.data) cfg={ google_review_url:cf.data.google_review_url||C.GOOGLE_REVIEW_URL, whatsapp_template:cf.data.whatsapp_template||C.WHATSAPP_TEMPLATE };
+  historial=h.data||[]; negativas=n.data||[]; valoraciones=v.data||[];
+  renderMetrics(); renderHist(); renderNeg();
+}
+
+function renderMetrics(){
+  const box=document.getElementById("metrics"); if(!box) return;
+  const now=new Date(), mStart=new Date(now.getFullYear(),now.getMonth(),1);
+  const enviosMes=historial.filter(r=>new Date(r.creado_at)>=mStart).length;
+  const total=valoraciones.length;
+  const prom = total ? (valoraciones.reduce((a,r)=>a+(r.estrellas||0),0)/total) : 0;
+  const pos = valoraciones.filter(r=>(r.estrellas||0)>=4).length;
+  const pctPos = total ? Math.round(pos/total*100) : 0;
+  const pend = negativas.filter(r=>!r.resuelto).length;
+  const tile=(n,l,warn)=>`<div class="tile${warn?' warn-tile':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  box.innerHTML =
+    tile(enviosMes,"Pedidos enviados (mes)") +
+    tile(total,"Valoraciones recibidas") +
+    tile(total?prom.toFixed(1)+"★":"—","Promedio") +
+    tile(total?pctPos+"%":"—","Positivas") +
+    tile(pend, pend?"Negativas pendientes":"Negativas al día", pend>0);
 }
 
 function renderHist(){
@@ -137,38 +201,45 @@ function renderHist(){
   document.getElementById("hcount").textContent=historial.length;
   if(!historial.length){ list.innerHTML=`<p class="empty">Todavía no mandaste ninguna valoración.</p>`; return; }
   list.innerHTML="";
-  historial.forEach(r=>list.appendChild($(`<div class="row"><span class="num">${r.telefono}</span><span class="when">${fmtWhen(r.creado_at)}</span></div>`)));
+  historial.forEach(r=>list.appendChild($(`<div class="row"><span class="num">${esc(r.telefono)}</span><span class="when">${fmtWhen(r.creado_at)}</span></div>`)));
 }
 
 function renderNeg(){
   const list=document.getElementById("nlist"); if(!list) return;
   const pend=negativas.filter(r=>!r.resuelto).length;
   document.getElementById("ncount").textContent=pend;
-  if(!negativas.length){ list.innerHTML=`<p class="empty">Sin reseñas negativas. ¡Buena señal! 🌿</p>`; return; }
+  document.querySelectorAll("#filters .chipbtn").forEach(b=>b.classList.toggle("active",b.dataset.f===filtro));
+  let data=negativas;
+  if(filtro==="pendientes") data=negativas.filter(r=>!r.resuelto);
+  if(filtro==="resueltas") data=negativas.filter(r=>r.resuelto);
+  if(!data.length){ list.innerHTML=`<p class="empty">${negativas.length?"No hay reseñas en este filtro.":"Sin reseñas negativas. ¡Buena señal! 🌿"}</p>`; return; }
   list.innerHTML="";
-  negativas.forEach(r=>{
+  data.forEach(r=>{
     const stars="★".repeat(r.estrellas||0)+"☆".repeat(Math.max(0,5-(r.estrellas||0)));
     const card=$(`<div class="neg ${r.resuelto?"done":""}">
-      <div class="neg-head">
-        <span class="neg-stars">${stars}</span>
-        <span class="neg-when">${fmtWhen(r.creado_at)}</span>
+      <div class="neg-head"><span class="neg-stars">${stars}</span><span class="neg-when">${fmtWhen(r.creado_at)}</span></div>
+      <div class="neg-body">${esc(r.comentario)}</div>
+      <div class="neg-nota-row">
+        <input class="neg-nota" placeholder="Nota interna (opcional)..." value="${esc(r.nota)}" />
+        <button class="btn btn-ghost mini nsave">Nota</button>
       </div>
-      <div class="neg-body">${(r.comentario||"").replace(/</g,"&lt;")}</div>
-      ${r.contacto?`<div class="neg-contact">📞 ${(""+r.contacto).replace(/</g,"&lt;")}</div>`:""}
       <div class="neg-actions"></div>
     </div>`);
+    const notaInput=card.querySelector(".neg-nota");
+    card.querySelector(".nsave").addEventListener("click",async(e)=>{
+      e.target.disabled=true; const val=notaInput.value.trim();
+      const { error } = await sb.from("resenas_negativas").update({ nota:val||null }).eq("id",r.id);
+      e.target.disabled=false;
+      if(!error){ r.nota=val; e.target.textContent="✓"; setTimeout(()=>e.target.textContent="Nota",1400); }
+    });
     const actions=card.querySelector(".neg-actions");
     if(r.resuelto){
-      actions.innerHTML=`<span class="chip ok">Resuelta ✓</span>`;
+      actions.innerHTML=`<span class="chip ok">Resuelta ✓</span> <button class="btn btn-ghost mini reopen">Reabrir</button>`;
+      actions.querySelector(".reopen").addEventListener("click",async(e)=>{ e.target.disabled=true; const {error}=await sb.from("resenas_negativas").update({resuelto:false}).eq("id",r.id); if(!error){ r.resuelto=false; renderNeg(); renderMetrics(); } });
     }else{
+      actions.innerHTML=`<span class="chip pend" style="margin-right:10px">Pendiente</span>`;
       const btn=$(`<button class="btn btn-ghost mini">Marcar como resuelta</button>`);
-      btn.addEventListener("click",async()=>{
-        btn.disabled=true;
-        const { error } = await sb.from("resenas_negativas").update({resuelto:true}).eq("id",r.id);
-        if(!error){ r.resuelto=true; renderNeg(); }
-        else btn.disabled=false;
-      });
-      actions.appendChild($(`<span class="chip pend" style="margin-right:10px">Pendiente</span>`));
+      btn.addEventListener("click",async()=>{ btn.disabled=true; const {error}=await sb.from("resenas_negativas").update({resuelto:true}).eq("id",r.id); if(!error){ r.resuelto=true; renderNeg(); renderMetrics(); } else btn.disabled=false; });
       actions.appendChild(btn);
     }
     list.appendChild(card);
@@ -179,10 +250,16 @@ function subscribeRealtime(){
   if(channel){ sb.removeChannel(channel); }
   channel = sb.channel("kuyen-live")
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"resenas_negativas"},(p)=>{
-      if(!negativas.find(x=>x.id===p.new.id)){ negativas.unshift(p.new); renderNeg(); }
+      if(!negativas.find(x=>x.id===p.new.id)){
+        negativas.unshift(p.new); renderNeg(); renderMetrics(); beep();
+        try{ if("Notification" in window && Notification.permission==="granted") new Notification("Nueva reseña negativa 🌿",{ body:(p.new.comentario||"").slice(0,120), tag:"kuyen-neg" }); }catch(e){}
+      }
     })
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"envios"},(p)=>{
-      if(!historial.find(x=>x.id===p.new.id)){ historial.unshift(p.new); renderHist(); }
+      if(!historial.find(x=>x.id===p.new.id)){ historial.unshift(p.new); renderHist(); renderMetrics(); }
+    })
+    .on("postgres_changes",{event:"INSERT",schema:"public",table:"valoraciones"},(p)=>{
+      valoraciones.unshift(p.new); renderMetrics();
     })
     .subscribe();
 }
