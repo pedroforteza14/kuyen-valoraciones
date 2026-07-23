@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Kuyen · Panel</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍩</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -28,7 +31,7 @@ const waLogo=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-
 let cfg={ google_review_url:C.GOOGLE_REVIEW_URL, whatsapp_template:C.WHATSAPP_TEMPLATE };
 let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas";
 
-function brand(){ return $(`<div class="brand"><div class="mark">${LEAF}</div><h1>${C.BUSINESS_NAME}</h1><p class="sub">${C.TAGLINE}</p></div>`); }
+function brand(){ return $(`<div class="brand"><img class="logo" src="img/logo.png" alt="Kuyén"></div>`); }
 function beep(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g);g.connect(audioCtx.destination); o.type="sine";o.frequency.value=680;g.gain.value=0.08;o.start(); o.frequency.setValueAtTime(880,audioCtx.currentTime+0.12); setTimeout(()=>o.stop(),300);}catch(e){} }
 
 /* ---------------- ARRANQUE ---------------- */
@@ -112,7 +115,7 @@ async function renderPanel(session){
     <p class="note" id="cfgMsg"></p>
   </div>`);
 
-  app.appendChild(mcard); app.appendChild(sendCard); app.appendChild(negCard); app.appendChild(histCard); app.appendChild(cfgCard);
+  app.appendChild(sendCard); app.appendChild(mcard); app.appendChild(negCard); app.appendChild(histCard); app.appendChild(cfgCard);
   app.appendChild($(`<p class="foot">Link del cliente: <a href="${ratingUrl}" target="_blank" rel="noopener">${ratingUrl}</a></p>`));
 
   document.getElementById("out").addEventListener("click",async()=>{ await sb.auth.signOut(); renderLogin(); });

@@ -1,26 +1,18 @@
 :root {
-  --bg:#F4F6F0; --surface:#FFFFFF; --ink:#1D2A20; --ink-soft:#56655A;
-  --line:#DCE3D6; --leaf:#3E6B3A; --leaf-deep:#2C5029; --leaf-soft:#EAF1E6;
-  --gold:#E0A21A; --danger:#B4552F; --ok:#2F7D4F;
-  --radius:18px; --shadow:0 10px 30px rgba(30,50,30,.08),0 2px 6px rgba(30,50,30,.05);
-  --font-body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
-}
-@media (prefers-color-scheme: dark){
-  :root{--bg:#121B15;--surface:#1A241C;--ink:#EAF0E6;--ink-soft:#9DAE9A;--line:#2C3A2E;
-  --leaf:#6FA766;--leaf-deep:#86C07C;--leaf-soft:#21301F;--gold:#F0BB47;--danger:#E08258;--ok:#6FD39B;
-  --shadow:0 10px 30px rgba(0,0,0,.35);}
+  --bg:#F6F1EA; --surface:#FFFFFF; --ink:#3B2416; --ink-soft:#6D645E;
+  --line:#EADFCE; --leaf:#F28C00; --leaf-deep:#D2691C; --leaf-soft:#FBEBD2;
+  --gold:#F2A900; --danger:#C0552F; --ok:#3C8F5A;
+  --radius:18px; --shadow:0 12px 30px rgba(120,70,20,.10),0 2px 6px rgba(120,70,20,.06);
+  --font-body:"Nunito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-display:"Comfortaa",system-ui,sans-serif;
 }
 
 *{box-sizing:border-box;}
 body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:var(--font-body);
   display:flex;align-items:flex-start;justify-content:center;padding:30px 18px 60px;-webkit-font-smoothing:antialiased;}
 .wrap{width:100%;max-width:460px;}
-.brand{text-align:center;margin-bottom:22px;}
-.mark{width:54px;height:54px;margin:0 auto 12px;display:grid;place-items:center;background:var(--leaf-soft);border-radius:50%;color:var(--leaf-deep);}
-.mark svg{width:30px;height:30px;}
-.brand h1{font-family:var(--font-display);font-weight:600;font-size:30px;letter-spacing:.5px;margin:0;line-height:1;}
-.brand .sub{margin:6px 0 0;font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--ink-soft);}
+.brand{text-align:center;margin-bottom:18px;}
+.logo{width:250px;max-width:82%;height:auto;display:block;margin:0 auto;}
 
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:26px 24px;margin-bottom:16px;}
 .card.center{text-align:center;}

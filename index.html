@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Kuyen · Valorá tu experiencia</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍩</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -27,7 +30,7 @@ const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 1
 const starSVG=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17.9 6.1 20.3l1.3-6.5L2.5 9.3l6.6-.8L12 2.5Z"/></svg>`;
 const gLogo=`<svg viewBox="0 0 24 24" fill="none"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2c-.3 1.4-1.1 2.6-2.3 3.4v2.8h3.7C21.7 18.6 23 15.8 23 12.3Z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.8c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.7H1.8v2.9C3.7 21.5 7.5 24 12 24Z"/><path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.4-.4-2.1s.1-1.4.4-2.1V7.7H1.8C1 9.2.6 10.6.6 12.7s.4 3.5 1.2 5l3.8-2.9Z"/><path fill="#EA4335" d="M12 5.4c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.8 15.1.7 12 .7 7.5.7 3.7 3.2 1.8 6.9l3.8 2.9C6.5 7.4 9 5.4 12 5.4Z"/></svg>`;
 
-app.appendChild($(`<div class="brand"><div class="mark">${LEAF}</div><h1>${C.BUSINESS_NAME}</h1><p class="sub">${C.TAGLINE}</p></div>`));
+app.appendChild($(`<div class="brand"><img class="logo" src="img/logo.png" alt="Kuyén · churros & chipa"></div>`));
 
 const card=$(`<div class="card center fade">
   <h2>¿Cómo estuvo tu experiencia?</h2>
@@ -37,7 +40,7 @@ const card=$(`<div class="card center fade">
   <div id="result"></div>
 </div>`);
 app.appendChild(card);
-app.appendChild($(`<p class="foot">${C.BUSINESS_NAME} · ${C.TAGLINE}</p>`));
+app.appendChild($(`<p class="foot">Kuyén · churros &amp; chipa 🧡</p>`));
 
 const labels=["","Muy mala","Mala","Regular","Buena","¡Excelente!"];
 const starsEl=card.querySelector("#stars"), hintEl=card.querySelector("#hint"), resultEl=card.querySelector("#result");
