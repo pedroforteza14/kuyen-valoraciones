@@ -135,7 +135,11 @@ async function renderPanel(session){
   sendCard.querySelector("#waBtn").addEventListener("click",async()=>{
     const n=clean(tel.value);
     if(!n){ tel.focus(); tel.style.borderColor="var(--danger)"; return; }
-    window.open(`https://wa.me/${n}?text=${encodeURIComponent(buildMsg())}`,"_blank","noopener");
+    const enc=encodeURIComponent(buildMsg());
+    const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    // En celu: abre la app de WhatsApp. En compu: abre WhatsApp Web directo (sale del número logueado ahí).
+    const url = isMobile ? `https://wa.me/${n}?text=${enc}` : `https://web.whatsapp.com/send?phone=${n}&text=${enc}`;
+    window.open(url,"_blank","noopener");
     const { data } = await sb.from("envios").insert({ telefono:n }).select();
     if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); }
     tel.value=""; dupe.textContent="";
