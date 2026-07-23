@@ -53,8 +53,8 @@ function paint(n){[...starsEl.children].forEach((s,idx)=>s.classList.toggle("on"
 function choose(n){resultEl.innerHTML="";resultEl.appendChild(n>=4?positive(n):negative(n));}
 
 function positive(n){
-  const w=$(`<div class="fade"><p class="lead" style="margin-top:20px">¡Nos alegra un montón! 🌿<br>¿Nos dejás esa valoración en Google?</p></div>`);
-  const a=$(`<button class="btn btn-primary">${gLogo}<span>Dejar mi reseña en Google</span></button>`);
+  const w=$(`<div class="fade"><p class="lead" style="margin-top:20px">Mil gracias 🧡<br>Nos ayudás mucho dejando tu valoración en Google:</p></div>`);
+  const a=$(`<button class="btn btn-primary btn-big">${gLogo}<span>Dejar mi reseña en Google</span></button>`);
   a.addEventListener("click",()=>{ logRating(n); window.open(googleUrl,"_blank","noopener"); });
   w.appendChild(a);
   return w;
