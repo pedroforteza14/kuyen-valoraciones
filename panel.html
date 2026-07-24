@@ -259,6 +259,15 @@ function renderNeg(){
       btn.addEventListener("click",async()=>{ btn.disabled=true; const {error}=await sb.from("resenas_negativas").update({resuelto:true}).eq("id",r.id); if(!error){ r.resuelto=true; renderNeg(); renderMetrics(); } else btn.disabled=false; });
       actions.appendChild(btn);
     }
+    const del=$(`<button class="btn btn-ghost mini del">Eliminar</button>`);
+    del.addEventListener("click",async()=>{
+      if(!confirm("¿Eliminar esta reseña? No se puede deshacer.")) return;
+      del.disabled=true;
+      const {error}=await sb.from("resenas_negativas").delete().eq("id",r.id);
+      if(!error){ negativas=negativas.filter(x=>x.id!==r.id); renderNeg(); renderMetrics(); }
+      else { del.disabled=false; alert("No se pudo eliminar."); }
+    });
+    actions.appendChild(del);
     list.appendChild(card);
   });
 }

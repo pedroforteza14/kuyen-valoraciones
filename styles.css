@@ -103,6 +103,9 @@ textarea:focus,input:focus{outline:2px solid var(--leaf);outline-offset:1px;bord
 /* nota interna */
 .neg-nota-row{display:flex;gap:8px;margin-top:10px;align-items:center;}
 .neg-nota{flex:1;font-size:13px;padding:8px 11px;}
+.neg-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+.neg-actions .del{color:var(--danger);margin-left:auto;}
+.neg-actions .del:hover{background:color-mix(in srgb,var(--danger) 10%,transparent);border-color:var(--danger);}
 
 .foot{text-align:center;margin-top:6px;font-size:12px;color:var(--ink-soft);}
 .foot a{color:var(--leaf-deep);}
