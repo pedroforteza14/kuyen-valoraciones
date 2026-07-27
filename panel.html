@@ -257,10 +257,13 @@ function renderMetrics(){
   const box=document.getElementById("metrics"); if(!box) return;
   const now=new Date(), mStart=new Date(now.getFullYear(),now.getMonth(),1);
   const enviosMes=historial.filter(r=>new Date(r.creado_at)>=mStart).length;
-  const total=valoraciones.length;
-  const prom = total ? (valoraciones.reduce((a,r)=>a+(r.estrellas||0),0)/total) : 0;
-  const pos = valoraciones.filter(r=>(r.estrellas||0)>=4).length;
-  const pctPos = total ? Math.round(pos/total*100) : 0;
+  const posVals = valoraciones.filter(r=>(r.estrellas||0)>=4); // positivas (van a Google)
+  const positivas = posVals.length;
+  const negs = negativas.length; // negativas = las reseñas de la base (se descuentan al borrar)
+  const total = positivas + negs;
+  const sumStars = posVals.reduce((a,r)=>a+(r.estrellas||0),0) + negativas.reduce((a,r)=>a+(r.estrellas||0),0);
+  const prom = total ? sumStars/total : 0;
+  const pctPos = total ? Math.round(positivas/total*100) : 0;
   const pend = negativas.filter(r=>!r.resuelto).length;
   const tile=(n,l,warn)=>`<div class="tile${warn?' warn-tile':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   box.innerHTML =

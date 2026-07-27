@@ -81,7 +81,6 @@ function negative(n){
     if(!localId){ const rr=await sb.from("locales").select("id").eq("slug",localSlug).single(); localId=rr.data?rr.data.id:null; }
     const { error } = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId });
     if(error){ err.textContent="No se pudo enviar. Probá de nuevo en un momento."; send.disabled=false; send.textContent="Enviar en privado"; return; }
-    logRating(n);
     w.innerHTML=`<p class="lead fade" style="margin-top:24px;text-align:center">¡Gracias por avisarnos! 🌿<br>Lo vamos a tener muy en cuenta.</p>`;
   });
   w.appendChild(send);
