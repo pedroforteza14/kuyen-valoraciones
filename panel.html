@@ -169,8 +169,10 @@ async function renderPanel(session){
     await sendTo(n); tel.value=""; dupe.textContent="";
   });
 
-  // Lista de clientes (Excel/CSV)
-  let contactos=[]; try{ contactos=JSON.parse(localStorage.getItem("kuyen_lista")||"[]"); }catch(e){}
+  // Lista de clientes (Excel/CSV) — independiente por local
+  let contactos=[];
+  const listaKey=()=>"kuyen_lista_"+(cfg.slug||"def");
+  function loadLista(){ try{ contactos=JSON.parse(localStorage.getItem(listaKey())||"[]"); }catch(e){ contactos=[]; } renderCli(); }
   const fileInput=listaCard.querySelector("#fileInput"), fileMsg=listaCard.querySelector("#fileMsg"), listaWrap=listaCard.querySelector("#listaWrap"), cliList=listaCard.querySelector("#cliList"), buscarCli=listaCard.querySelector("#buscarCli");
   function renderCli(){
     if(!contactos.length){ listaWrap.classList.add("hidden"); return; }
@@ -199,14 +201,13 @@ async function renderPanel(session){
       const nameKey=keys.find(k=>/nombre|cliente|name/.test(norm(k)));
       if(!telKey){ fileMsg.textContent="⚠️ No encontré una columna de teléfono (tiene que tener un encabezado tipo 'Teléfono')."; return; }
       contactos = rows.map(r=>({ nombre:String(r[nameKey]||"").trim(), tel:normAR(r[telKey]) })).filter(c=>c.tel.length>=10);
-      localStorage.setItem("kuyen_lista", JSON.stringify(contactos));
+      localStorage.setItem(listaKey(), JSON.stringify(contactos));
       fileMsg.textContent = `✓ ${contactos.length} contactos cargados.`;
       renderCli();
     }catch(err){ fileMsg.textContent="⚠️ No se pudo leer el archivo. ¿Es un .xlsx o .csv válido?"; }
   });
   buscarCli.addEventListener("input",renderCli);
-  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem("kuyen_lista"); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
-  renderCli();
+  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem(listaKey()); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
 
   // copiar historial
   histCard.querySelector("#hcopy").addEventListener("click",async(e)=>{
@@ -235,7 +236,7 @@ async function renderPanel(session){
   cfgCard.querySelector("#gurl").value = cfg.google_review_url||"";
   cfgCard.querySelector("#wtpl").value = cfg.whatsapp_template||C.WHATSAPP_TEMPLATE;
   refreshPrev();
-  renderCli();
+  loadLista();
   subscribeRealtime();
 }
 
