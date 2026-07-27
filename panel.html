@@ -10,6 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="wrap" id="app"></div>
@@ -23,6 +24,7 @@ const $=(h)=>{const t=document.createElement("template");t.innerHTML=h.trim();re
 const app=document.getElementById("app");
 const fmtWhen=(iso)=>{const d=new Date(iso);return d.toLocaleDateString("es-AR")+" · "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});};
 const clean=(s)=>String(s||"").replace(/[^\d]/g,"");
+function normAR(raw){ let d=String(raw==null?"":raw).replace(/[^\d]/g,""); if(!d) return ""; if(d.startsWith("549")) return d; if(d.startsWith("54")) return "549"+d.slice(2); return "549"+d.replace(/^0/,""); }
 const esc=(s)=>String(s==null?"":s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
 
 const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 10 4 20c0 0 6-1 10-5 3-3 5-7 6-11ZM7 17c1-4 4-7 8-9"/></svg>`;
@@ -114,11 +116,25 @@ async function renderPanel(session){
     <button class="btn btn-primary" id="cfgSave">Guardar cambios</button>
     <p class="note" id="cfgMsg"></p>
   </div>`);
+  // LISTA DE CLIENTES (Excel/CSV)
+  const listaCard=$(`<div class="card">
+    <span class="badge">Lista de clientes</span>
+    <h2>Enviar desde tu Excel</h2>
+    <p class="lead">Subí tu archivo (.xlsx o .csv) y mandá a cada cliente con un clic.</p>
+    <label class="btn btn-ghost" style="cursor:pointer"><input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none"><span>📄 Subir archivo</span></label>
+    <p class="note" id="fileMsg" style="text-align:left"></p>
+    <div id="listaWrap" class="hidden">
+      <div class="field" style="margin:10px 0"><input id="buscarCli" type="text" placeholder="Buscar por nombre o número..." autocomplete="off" /></div>
+      <div class="sec-title">Contactos <span class="count" id="cliCount">0</span></div>
+      <div class="list" id="cliList"></div>
+      <button class="btn btn-ghost mini" id="cliClear" style="margin-top:12px">Quitar lista</button>
+    </div>
+  </div>`);
 
   const grid=$(`<div class="panel-grid"></div>`);
   const colL=$(`<div class="col"></div>`);
   const colR=$(`<div class="col"></div>`);
-  colL.appendChild(sendCard); colL.appendChild(negCard);
+  colL.appendChild(sendCard); colL.appendChild(listaCard); colL.appendChild(negCard);
   colR.appendChild(mcard); colR.appendChild(histCard); colR.appendChild(cfgCard);
   grid.appendChild(colL); grid.appendChild(colR);
   app.appendChild(grid);
@@ -133,6 +149,15 @@ async function renderPanel(session){
   const tel=sendCard.querySelector("#tel"), dupe=sendCard.querySelector("#dupe");
   function buildMsg(){ return (cfg.whatsapp_template||C.WHATSAPP_TEMPLATE).replace("{link}", ratingUrl()); }
   function refreshPrev(){ sendCard.querySelector("#prev").textContent = buildMsg(); }
+  async function sendTo(n){
+    const enc=encodeURIComponent(buildMsg());
+    const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    // En celu: abre la app de WhatsApp. En compu: abre WhatsApp Web directo (sale del número logueado ahí).
+    const url = isMobile ? `https://wa.me/${n}?text=${enc}` : `https://web.whatsapp.com/send?phone=${n}&text=${enc}`;
+    window.open(url,"_blank","noopener");
+    const { data } = await sb.from("envios").insert({ telefono:n, local_id:cfg.local_id }).select();
+    if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); renderCli(); }
+  }
   tel.addEventListener("input",()=>{
     const n=clean(tel.value);
     const prev=historial.filter(r=>clean(r.telefono)===n);
@@ -141,15 +166,47 @@ async function renderPanel(session){
   sendCard.querySelector("#waBtn").addEventListener("click",async()=>{
     const n=clean(tel.value);
     if(!n){ tel.focus(); tel.style.borderColor="var(--danger)"; return; }
-    const enc=encodeURIComponent(buildMsg());
-    const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-    // En celu: abre la app de WhatsApp. En compu: abre WhatsApp Web directo (sale del número logueado ahí).
-    const url = isMobile ? `https://wa.me/${n}?text=${enc}` : `https://web.whatsapp.com/send?phone=${n}&text=${enc}`;
-    window.open(url,"_blank","noopener");
-    const { data } = await sb.from("envios").insert({ telefono:n, local_id:cfg.local_id }).select();
-    if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); }
-    tel.value=""; dupe.textContent="";
+    await sendTo(n); tel.value=""; dupe.textContent="";
   });
+
+  // Lista de clientes (Excel/CSV)
+  let contactos=[]; try{ contactos=JSON.parse(localStorage.getItem("kuyen_lista")||"[]"); }catch(e){}
+  const fileInput=listaCard.querySelector("#fileInput"), fileMsg=listaCard.querySelector("#fileMsg"), listaWrap=listaCard.querySelector("#listaWrap"), cliList=listaCard.querySelector("#cliList"), buscarCli=listaCard.querySelector("#buscarCli");
+  function renderCli(){
+    if(!contactos.length){ listaWrap.classList.add("hidden"); return; }
+    listaWrap.classList.remove("hidden");
+    const enviados=new Set(historial.map(h=>clean(h.telefono)));
+    const q=(buscarCli.value||"").toLowerCase(), qd=q.replace(/[^\d]/g,"");
+    const data=contactos.filter(c=> !q || (c.nombre||"").toLowerCase().includes(q) || (qd && c.tel.includes(qd)));
+    listaCard.querySelector("#cliCount").textContent = `${data.length} · ${contactos.filter(c=>enviados.has(c.tel)).length} enviados`;
+    cliList.innerHTML="";
+    data.slice(0,400).forEach(c=>{
+      const row=$(`<div class="row"><span class="num" style="font-weight:600;font-family:var(--font-body)">${esc(c.nombre||c.tel)}<br><span style="font-size:12px;color:var(--ink-soft);font-weight:400">+${c.tel}</span></span></div>`);
+      if(enviados.has(c.tel)){ row.appendChild($(`<span class="chip ok">Enviado ✓</span>`)); }
+      else { const b=$(`<button class="btn btn-wa mini" style="width:auto">Enviar</button>`); b.addEventListener("click",async()=>{ b.disabled=true; await sendTo(c.tel); }); row.appendChild(b); }
+      cliList.appendChild(row);
+    });
+  }
+  fileInput.addEventListener("change",async(e)=>{
+    const f=e.target.files[0]; if(!f) return;
+    fileMsg.textContent="Leyendo archivo...";
+    try{
+      const wb=XLSX.read(await f.arrayBuffer());
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
+      const norm=s=>String(s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+      const keys=Object.keys(rows[0]||{});
+      const telKey=keys.find(k=>/tel|cel|whats|phone/.test(norm(k)));
+      const nameKey=keys.find(k=>/nombre|cliente|name/.test(norm(k)));
+      if(!telKey){ fileMsg.textContent="⚠️ No encontré una columna de teléfono (tiene que tener un encabezado tipo 'Teléfono')."; return; }
+      contactos = rows.map(r=>({ nombre:String(r[nameKey]||"").trim(), tel:normAR(r[telKey]) })).filter(c=>c.tel.length>=10);
+      localStorage.setItem("kuyen_lista", JSON.stringify(contactos));
+      fileMsg.textContent = `✓ ${contactos.length} contactos cargados.`;
+      renderCli();
+    }catch(err){ fileMsg.textContent="⚠️ No se pudo leer el archivo. ¿Es un .xlsx o .csv válido?"; }
+  });
+  buscarCli.addEventListener("input",renderCli);
+  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem("kuyen_lista"); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
+  renderCli();
 
   // copiar historial
   histCard.querySelector("#hcopy").addEventListener("click",async(e)=>{
@@ -178,6 +235,7 @@ async function renderPanel(session){
   cfgCard.querySelector("#gurl").value = cfg.google_review_url||"";
   cfgCard.querySelector("#wtpl").value = cfg.whatsapp_template||C.WHATSAPP_TEMPLATE;
   refreshPrev();
+  renderCli();
   subscribeRealtime();
 }
 
