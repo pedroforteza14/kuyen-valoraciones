@@ -108,6 +108,11 @@ async function renderPanel(session){
     <div class="list" id="hlist"><p class="empty">Cargando...</p></div>
     <button class="btn btn-ghost" id="hcopy" style="margin-top:14px">Copiar historial</button>
   </div>`);
+  // VALORACIONES POSITIVAS (quién puntuó 4-5★ desde un envío)
+  const posCard=$(`<div class="card">
+    <div class="sec-title">Valoraciones positivas <span class="count" id="posCount">0</span></div>
+    <div class="list" id="posList"><p class="empty">Cargando...</p></div>
+  </div>`);
   // CONFIGURACIÓN
   const cfgCard=$(`<div class="card">
     <div class="sec-title">Configuración</div>
@@ -135,7 +140,7 @@ async function renderPanel(session){
   const colL=$(`<div class="col"></div>`);
   const colR=$(`<div class="col"></div>`);
   colL.appendChild(sendCard); colL.appendChild(listaCard); colL.appendChild(negCard);
-  colR.appendChild(mcard); colR.appendChild(histCard); colR.appendChild(cfgCard);
+  colR.appendChild(mcard); colR.appendChild(histCard); colR.appendChild(posCard); colR.appendChild(cfgCard);
   grid.appendChild(colL); grid.appendChild(colR);
   app.appendChild(grid);
   app.appendChild($(`<p class="foot">Link del cliente de este local: <a id="clientLink" href="#" target="_blank" rel="noopener"></a></p>`));
@@ -149,14 +154,16 @@ async function renderPanel(session){
   const tel=sendCard.querySelector("#tel"), dupe=sendCard.querySelector("#dupe");
   function buildMsg(){ return (cfg.whatsapp_template||C.WHATSAPP_TEMPLATE).replace("{link}", ratingUrl()); }
   function refreshPrev(){ sendCard.querySelector("#prev").textContent = buildMsg(); }
-  async function sendTo(n){
-    const enc=encodeURIComponent(buildMsg());
+  async function sendTo(n, nombre){
+    const eid = crypto.randomUUID();
+    const link = ratingUrl() + "&e=" + eid; // etiqueta para saber quién valora
+    const enc=encodeURIComponent((cfg.whatsapp_template||C.WHATSAPP_TEMPLATE).replace("{link}", link));
     const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
     // En celu: abre la app de WhatsApp. En compu: abre WhatsApp Web directo (sale del número logueado ahí).
     const url = isMobile ? `https://wa.me/${n}?text=${enc}` : `https://web.whatsapp.com/send?phone=${n}&text=${enc}`;
     window.open(url,"_blank","noopener");
-    const { data } = await sb.from("envios").insert({ telefono:n, local_id:cfg.local_id }).select();
-    if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); renderCli(); }
+    const { data } = await sb.from("envios").insert({ id:eid, telefono:n, local_id:cfg.local_id, nombre:nombre||null }).select();
+    if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); renderCli(); renderPositivas(); }
   }
   tel.addEventListener("input",()=>{
     const n=clean(tel.value);
@@ -185,7 +192,7 @@ async function renderPanel(session){
     data.slice(0,400).forEach(c=>{
       const row=$(`<div class="row"><span class="num" style="font-weight:600;font-family:var(--font-body)">${esc(c.nombre||c.tel)}<br><span style="font-size:12px;color:var(--ink-soft);font-weight:400">+${c.tel}</span></span></div>`);
       if(enviados.has(c.tel)){ row.appendChild($(`<span class="chip ok">Enviado ✓</span>`)); }
-      else { const b=$(`<button class="btn btn-wa mini" style="width:auto">Enviar</button>`); b.addEventListener("click",async()=>{ b.disabled=true; await sendTo(c.tel); }); row.appendChild(b); }
+      else { const b=$(`<button class="btn btn-wa mini" style="width:auto">Enviar</button>`); b.addEventListener("click",async()=>{ b.disabled=true; await sendTo(c.tel, c.nombre); }); row.appendChild(b); }
       cliList.appendChild(row);
     });
   }
@@ -247,11 +254,24 @@ async function loadData(){
     lid ? sb.from("locales").select("*").eq("id",lid).single() : Promise.resolve({data:null}),
     sb.from("envios").select("*").order("creado_at",{ascending:false}),
     sb.from("resenas_negativas").select("*").order("creado_at",{ascending:false}),
-    sb.from("valoraciones").select("estrellas,creado_at,local_id").order("creado_at",{ascending:false}),
+    sb.from("valoraciones").select("estrellas,creado_at,local_id,envio_id").order("creado_at",{ascending:false}),
   ]);
   if(lc.data) cfg={ local_id:lc.data.id, slug:lc.data.slug, nombre:lc.data.nombre, google_review_url:lc.data.google_review_url||C.GOOGLE_REVIEW_URL, whatsapp_template:lc.data.whatsapp_template||C.WHATSAPP_TEMPLATE };
   historial=h.data||[]; negativas=n.data||[]; valoraciones=v.data||[];
-  renderMetrics(); renderHist(); renderNeg();
+  renderMetrics(); renderHist(); renderNeg(); renderPositivas();
+}
+
+function renderPositivas(){
+  const box=document.getElementById("posList"); if(!box) return;
+  const byId={}; historial.forEach(e=>byId[e.id]=e);
+  const pos=valoraciones.filter(v=>(v.estrellas||0)>=4 && v.envio_id && byId[v.envio_id]).map(v=>({e:byId[v.envio_id], estrellas:v.estrellas, at:v.creado_at}));
+  const cc=document.getElementById("posCount"); if(cc) cc.textContent=pos.length;
+  if(!pos.length){ box.innerHTML=`<p class="empty">Todavía nadie valoró positivo desde un envío con nombre.</p>`; return; }
+  box.innerHTML="";
+  pos.forEach(p=>{
+    const stars="★".repeat(p.estrellas||0);
+    box.appendChild($(`<div class="row"><span class="num" style="font-weight:600;font-family:var(--font-body)">${esc(p.e.nombre||p.e.telefono)}<br><span style="font-size:12px;color:var(--ink-soft);font-weight:400">+${esc(p.e.telefono)} · <span style="color:var(--gold)">${stars}</span></span></span><span class="when">${fmtWhen(p.at)}</span></div>`));
+  });
 }
 
 function renderMetrics(){
@@ -347,7 +367,7 @@ function subscribeRealtime(){
       if(p.new.local_id===cfg.local_id && !historial.find(x=>x.id===p.new.id)){ historial.unshift(p.new); renderHist(); renderMetrics(); }
     })
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"valoraciones"},(p)=>{
-      if(p.new.local_id===cfg.local_id){ valoraciones.unshift(p.new); renderMetrics(); }
+      if(p.new.local_id===cfg.local_id){ valoraciones.unshift(p.new); renderMetrics(); renderPositivas(); }
     })
     .subscribe();
 }
