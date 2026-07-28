@@ -108,6 +108,11 @@ async function renderPanel(session){
     <div class="list" id="hlist"><p class="empty">Cargando...</p></div>
     <button class="btn btn-ghost" id="hcopy" style="margin-top:14px">Copiar historial</button>
   </div>`);
+  // PRINCIPALES PROBLEMAS (análisis de las negativas)
+  const probCard=$(`<div class="card">
+    <div class="sec-title">Principales problemas <span class="count" id="probCount">0</span></div>
+    <div class="list" id="probList" style="max-height:none"><p class="empty">Cargando...</p></div>
+  </div>`);
   // VALORACIONES POSITIVAS (quién puntuó 4-5★ desde un envío)
   const posCard=$(`<div class="card">
     <div class="sec-title">Valoraciones positivas <span class="count" id="posCount">0</span></div>
@@ -129,6 +134,7 @@ async function renderPanel(session){
     <label class="btn btn-ghost" style="cursor:pointer"><input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none"><span>📄 Subir archivo</span></label>
     <p class="note" id="fileMsg" style="text-align:left"></p>
     <div id="listaWrap" class="hidden">
+      <p class="note" id="listaFecha" style="text-align:left;margin:8px 0 0;color:var(--leaf-deep)"></p>
       <div class="field" style="margin:10px 0"><input id="buscarCli" type="text" placeholder="Buscar por nombre o número..." autocomplete="off" /></div>
       <div class="sec-title">Contactos <span class="count" id="cliCount">0</span></div>
       <div class="list" id="cliList"></div>
@@ -140,7 +146,7 @@ async function renderPanel(session){
   const colL=$(`<div class="col"></div>`);
   const colR=$(`<div class="col"></div>`);
   colL.appendChild(sendCard); colL.appendChild(listaCard); colL.appendChild(negCard);
-  colR.appendChild(mcard); colR.appendChild(histCard); colR.appendChild(posCard); colR.appendChild(cfgCard);
+  colR.appendChild(mcard); colR.appendChild(probCard); colR.appendChild(histCard); colR.appendChild(posCard); colR.appendChild(cfgCard);
   grid.appendChild(colL); grid.appendChild(colR);
   app.appendChild(grid);
   app.appendChild($(`<p class="foot">Link del cliente de este local: <a id="clientLink" href="#" target="_blank" rel="noopener"></a></p>`));
@@ -184,6 +190,7 @@ async function renderPanel(session){
   function renderCli(){
     if(!contactos.length){ listaWrap.classList.add("hidden"); return; }
     listaWrap.classList.remove("hidden");
+    const fe=document.getElementById("listaFecha"), fch=localStorage.getItem(listaKey()+"_fecha"); if(fe) fe.textContent = fch ? "📅 Planilla subida: "+fmtWhen(fch) : "";
     const enviados=new Set(historial.map(h=>clean(h.telefono)));
     const q=(buscarCli.value||"").toLowerCase(), qd=q.replace(/[^\d]/g,"");
     const data=contactos.filter(c=> !q || (c.nombre||"").toLowerCase().includes(q) || (qd && c.tel.includes(qd)));
@@ -209,12 +216,13 @@ async function renderPanel(session){
       if(!telKey){ fileMsg.textContent="⚠️ No encontré una columna de teléfono (tiene que tener un encabezado tipo 'Teléfono')."; return; }
       contactos = rows.map(r=>({ nombre:String(r[nameKey]||"").trim(), tel:normAR(r[telKey]) })).filter(c=>c.tel.length>=10);
       localStorage.setItem(listaKey(), JSON.stringify(contactos));
+      localStorage.setItem(listaKey()+"_fecha", new Date().toISOString());
       fileMsg.textContent = `✓ ${contactos.length} contactos cargados.`;
       renderCli();
     }catch(err){ fileMsg.textContent="⚠️ No se pudo leer el archivo. ¿Es un .xlsx o .csv válido?"; }
   });
   buscarCli.addEventListener("input",renderCli);
-  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem(listaKey()); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
+  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem(listaKey()); localStorage.removeItem(listaKey()+"_fecha"); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
 
   // copiar historial
   histCard.querySelector("#hcopy").addEventListener("click",async(e)=>{
@@ -258,7 +266,37 @@ async function loadData(){
   ]);
   if(lc.data) cfg={ local_id:lc.data.id, slug:lc.data.slug, nombre:lc.data.nombre, google_review_url:lc.data.google_review_url||C.GOOGLE_REVIEW_URL, whatsapp_template:lc.data.whatsapp_template||C.WHATSAPP_TEMPLATE };
   historial=h.data||[]; negativas=n.data||[]; valoraciones=v.data||[];
-  renderMetrics(); renderHist(); renderNeg(); renderPositivas();
+  renderMetrics(); renderHist(); renderNeg(); renderPositivas(); renderProblemas();
+}
+
+function renderProblemas(){
+  const box=document.getElementById("probList"); if(!box) return;
+  const cats=[
+    {emoji:"🥶", label:"Llegó frío", kw:["frio","fria","frios","helado","tibio"]},
+    {emoji:"⏱️", label:"Demora / tardó", kw:["demora","tardo","tarde","lento","espere","esperar","esperando","nunca lleg","mucho tiempo"]},
+    {emoji:"📦", label:"Faltó / incompleto", kw:["falto","faltaba","faltan","incompleto","no vino","no lleg","no trajo","equivocado","otro producto"]},
+    {emoji:"😕", label:"Atención / trato", kw:["atencion","atendi","maltrato","grosero","respuesta","respondi","mala onda","trato","descortes"]},
+    {emoji:"🍩", label:"Cantidad / porción", kw:["poco","poca","pocos","chico","chica","cantidad","porcion","escaso"]},
+    {emoji:"😖", label:"Sabor / calidad", kw:["sabor","gusto","feo","seco","duro","quemado","salado","calidad","mal estado","rancio","viejo","crudo"]},
+    {emoji:"💵", label:"Precio", kw:["caro","carisimo","precio","cobraron","cobro"]},
+    {emoji:"🛵", label:"Entrega / delivery", kw:["direccion","domicilio","repartidor","delivery","reparto","cadete","paqueteria"]},
+  ];
+  const norm=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+  const counts=cats.map(c=>({...c,n:0})); let otros=0;
+  negativas.forEach(r=>{
+    const t=norm(r.comentario); let matched=false;
+    counts.forEach(c=>{ if(c.kw.some(k=>t.includes(k))){ c.n++; matched=true; } });
+    if(!matched && t.trim()) otros++;
+  });
+  const ranked=counts.filter(c=>c.n>0).sort((a,b)=>b.n-a.n);
+  const cc=document.getElementById("probCount"); if(cc) cc.textContent=negativas.length;
+  if(!ranked.length && !otros){ box.innerHTML=`<p class="empty">Sin negativas para analizar todavía. 🌟</p>`; return; }
+  const max=Math.max(1,...ranked.map(c=>c.n));
+  box.innerHTML="";
+  ranked.forEach(c=>{
+    box.appendChild($(`<div class="prob-row"><div class="prob-head"><span>${c.emoji} ${c.label}</span><b>${c.n}</b></div><div class="prob-bar"><div class="prob-fill" style="width:${Math.round(c.n/max*100)}%"></div></div></div>`));
+  });
+  if(otros){ box.appendChild($(`<div class="prob-row"><div class="prob-head"><span>🗂️ Otros</span><b>${otros}</b></div></div>`)); }
 }
 
 function renderPositivas(){
@@ -346,7 +384,7 @@ function renderNeg(){
       if(!confirm("¿Eliminar esta reseña? No se puede deshacer.")) return;
       del.disabled=true;
       const {error}=await sb.from("resenas_negativas").delete().eq("id",r.id);
-      if(!error){ negativas=negativas.filter(x=>x.id!==r.id); renderNeg(); renderMetrics(); }
+      if(!error){ negativas=negativas.filter(x=>x.id!==r.id); renderNeg(); renderMetrics(); renderProblemas(); }
       else { del.disabled=false; alert("No se pudo eliminar."); }
     });
     actions.appendChild(del);
@@ -359,7 +397,7 @@ function subscribeRealtime(){
   channel = sb.channel("kuyen-live")
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"resenas_negativas"},(p)=>{
       if(p.new.local_id===cfg.local_id && !negativas.find(x=>x.id===p.new.id)){
-        negativas.unshift(p.new); renderNeg(); renderMetrics(); beep();
+        negativas.unshift(p.new); renderNeg(); renderMetrics(); renderProblemas(); beep();
         try{ if("Notification" in window && Notification.permission==="granted") new Notification("Nueva reseña negativa 🧡",{ body:(p.new.comentario||"").slice(0,120), tag:"kuyen-neg" }); }catch(e){}
       }
     })
