@@ -18,8 +18,8 @@ window.KUYEN = {
 
   // Mensaje de WhatsApp que manda el panel ({link} se reemplaza solo)
   WHATSAPP_TEMPLATE:
-    "¡Hola! ¿Cómo estás? Te escribimos desde Kuyén para agradecerte por haber realizado un pedido en nuestra Tienda Online durante los últimos 30 días 😁\n" +
-    "Queremos asegurarnos que hayas recibido todo en las mejores condiciones y hayas disfrutado tu pedido. ¿Nos ayudás con una rápida valoración? Cualquier comentario nos ayuda a seguir mejorando:\n" +
+    "¡Hola! ¿Cómo estás? 🧡 Te escribimos desde Kuyén para agradecerte por tu pedido en nuestra Tienda Online 😊\n" +
+    "Somos un emprendimiento y cada valoración nos ayuda MUCHÍSIMO a seguir creciendo. ¿Nos regalás 10 segundos para dejarnos tu opinión? Es un solo click 👇\n" +
     "{link}\n" +
-    "Muchas gracias por acompañarnos 🧡",
+    "¡Mil gracias por bancarnos! 🍩",
 };

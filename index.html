@@ -46,7 +46,7 @@ app.appendChild($(`<p class="foot">Kuyén · churros &amp; chipa 🧡</p>`));
 
 const labels=["","Muy mala","Mala","Regular","Buena","¡Excelente!"];
 const starsEl=card.querySelector("#stars"), hintEl=card.querySelector("#hint"), resultEl=card.querySelector("#result");
-let picked=0;
+let picked=0, ratedPos=false;
 for(let i=1;i<=5;i++){
   const b=$(`<button class="star" aria-label="${i} estrella${i>1?"s":""}">${starSVG}</button>`);
   b.addEventListener("mouseenter",()=>paint(i));
@@ -55,13 +55,14 @@ for(let i=1;i<=5;i++){
   starsEl.appendChild(b);
 }
 function paint(n){[...starsEl.children].forEach((s,idx)=>s.classList.toggle("on",idx<n));hintEl.textContent=n?labels[n]:"Elegí de 1 a 5 estrellas";}
-function choose(n){resultEl.innerHTML="";resultEl.appendChild(n>=4?positive(n):negative(n));}
+function choose(n){resultEl.innerHTML=""; if(n>=4){ if(!ratedPos){ logRating(n); ratedPos=true; } resultEl.appendChild(positive(n)); } else { resultEl.appendChild(negative(n)); } }
 
 function positive(n){
   const w=$(`<div class="fade"><p class="lead" style="margin-top:20px">Mil gracias 🧡<br>Nos ayudás mucho dejando tu valoración en Google:</p></div>`);
   const a=$(`<button class="btn btn-primary btn-big">${gLogo}<span>Dejar mi reseña en Google</span></button>`);
-  a.addEventListener("click",()=>{ logRating(n); window.open(googleUrl,"_blank","noopener"); });
+  a.addEventListener("click",()=>{ window.open(googleUrl,"_blank","noopener"); });
   w.appendChild(a);
+  w.appendChild($(`<p class="note">💡 Si Google no te deja publicar, revisá que estés con tu cuenta de Google iniciada. Si no, buscá <b>"${C.BUSINESS_NAME}"</b> en Google Maps y dejá tu reseña ahí 🙏</p>`));
   return w;
 }
 
