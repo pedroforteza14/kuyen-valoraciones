@@ -25,26 +25,42 @@ const app=document.getElementById("app");
 const fmtWhen=(iso)=>{const d=new Date(iso);return d.toLocaleDateString("es-AR")+" · "+d.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});};
 const clean=(s)=>String(s||"").replace(/[^\d]/g,"");
 function normAR(raw){ let d=String(raw==null?"":raw).replace(/[^\d]/g,""); if(!d) return ""; if(d.startsWith("549")) return d; if(d.startsWith("54")) return "549"+d.slice(2); return "549"+d.replace(/^0/,""); }
-const esc=(s)=>String(s==null?"":s).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+const esc=(s)=>String(s==null?"":s).replace(/[<>&"']/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[c]));
 
 const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 10 4 20c0 0 6-1 10-5 3-3 5-7 6-11ZM7 17c1-4 4-7 8-9"/></svg>`;
 const waLogo=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2s-.7 1-.9 1.2c-.2.2-.3.2-.6.1-1.7-.8-2.8-1.5-3.9-3.4-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 2 .8 2.7.9 3.7.8.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3ZM12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z"/></svg>`;
 
 let cfg={ local_id:null, slug:"agronomia", nombre:"", google_review_url:C.GOOGLE_REVIEW_URL, whatsapp_template:C.WHATSAPP_TEMPLATE };
-let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas";
+let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas", panelActive=false, refreshBound=false, cliRefresh=null;
 
 function brand(){ return $(`<div class="brand"><img class="logo" src="img/logo.png" alt="Kuyén"></div>`); }
+function setLive(on){ const l=document.getElementById("live"), t=document.getElementById("liveTxt"); if(!l) return; l.classList.toggle("on",on); if(t) t.textContent=on?"En vivo":"Reconectando…"; }
+// Refresca los datos al volver a la pestaña o recuperar internet; si expiró la sesión, vuelve al login.
+async function refreshOnFocus(){
+  if(!panelActive || !sb) return;
+  const ae=document.activeElement; if(ae && /INPUT|TEXTAREA/.test(ae.tagName)) return; // no interrumpir mientras escribe
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ renderLogin(); return; }
+  try{ await loadData(); }catch(e){}
+}
+function bindRefresh(){
+  if(refreshBound) return; refreshBound=true;
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="visible") refreshOnFocus(); });
+  window.addEventListener("online",refreshOnFocus);
+}
 function beep(){ try{ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==="suspended") audioCtx.resume(); const o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g);g.connect(audioCtx.destination); o.type="sine";o.frequency.value=680;g.gain.value=0.08;o.start(); o.frequency.setValueAtTime(880,audioCtx.currentTime+0.12); setTimeout(()=>o.stop(),300);}catch(e){} }
 
 /* ---------------- ARRANQUE ---------------- */
 async function boot(){
   if(!sb){ app.innerHTML=""; app.appendChild(brand()); app.appendChild($(`<div class="card center"><h2>Falta configurar Supabase</h2><p class="lead">Completá SUPABASE_URL y SUPABASE_ANON_KEY en <b>config.js</b>.</p></div>`)); return; }
+  bindRefresh();
   const { data:{ session } } = await sb.auth.getSession();
   session ? renderPanel(session) : renderLogin();
 }
 
 /* ---------------- LOGIN ---------------- */
 function renderLogin(){
+  panelActive=false; document.title="Kuyen · Panel"; setLive(false);
   if(channel){ sb.removeChannel(channel); channel=null; }
   app.innerHTML=""; app.className="wrap"; app.appendChild(brand());
   const card=$(`<div class="card fade">
@@ -71,8 +87,10 @@ function renderLogin(){
 
 /* ---------------- PANEL ---------------- */
 async function renderPanel(session){
+  panelActive=true;
   app.innerHTML=""; app.className="wrap wide"; app.appendChild(brand());
-  app.appendChild($(`<div class="topbar"><span class="who">🏠 <b id="localName">…</b> · 👤 ${esc(session.user.email)}</span><button class="linkbtn" id="out">Cerrar sesión</button></div>`));
+  app.appendChild($(`<div class="topbar"><span class="who">🏠 <b id="localName">…</b> · 👤 ${esc(session.user.email)}</span><span class="topbar-right"><span class="live" id="live" title="Conexión en tiempo real"><span class="dot"></span><span id="liveTxt">Conectando…</span></span><button class="linkbtn" id="out">Cerrar sesión</button></span></div>`));
+  app.appendChild($(`<div id="loadErr" class="loadbar hidden"></div>`));
   if("Notification" in window && Notification.permission==="default"){ Notification.requestPermission(); }
 
   const ratingUrl = () => location.origin + "/?local=" + (cfg.slug || "agronomia");
@@ -172,14 +190,18 @@ async function renderPanel(session){
     if(data){ historial.unshift(data[0]); renderHist(); renderMetrics(); renderCli(); renderPositivas(); }
   }
   tel.addEventListener("input",()=>{
-    const n=clean(tel.value);
-    const prev=historial.filter(r=>clean(r.telefono)===n);
-    dupe.textContent=(n.length>=8 && prev.length) ? `⚠️ Ya contactaste este número (${fmtWhen(prev[0].creado_at)})` : "";
+    const n=normAR(tel.value);
+    const prev=n?historial.filter(r=>normAR(r.telefono)===n):[];
+    tel.style.borderColor="";
+    dupe.textContent=(clean(tel.value).length>=8 && prev.length) ? `⚠️ Ya contactaste este número (${fmtWhen(prev[0].creado_at)})` : "";
   });
-  sendCard.querySelector("#waBtn").addEventListener("click",async()=>{
-    const n=clean(tel.value);
-    if(!n){ tel.focus(); tel.style.borderColor="var(--danger)"; return; }
-    await sendTo(n); tel.value=""; dupe.textContent="";
+  const waBtn=sendCard.querySelector("#waBtn");
+  waBtn.addEventListener("click",async()=>{
+    const n=normAR(tel.value);
+    if(n.length<12){ tel.focus(); tel.style.borderColor="var(--danger)"; dupe.textContent="⚠️ Poné el celular completo con código de área (ej: 11 2233 4455)."; return; }
+    waBtn.disabled=true;
+    await sendTo(n); tel.value=""; dupe.textContent=""; tel.style.borderColor="";
+    waBtn.disabled=false;
   });
 
   // Lista de clientes (Excel/CSV) — independiente por local
@@ -203,6 +225,7 @@ async function renderPanel(session){
       cliList.appendChild(row);
     });
   }
+  cliRefresh=renderCli;
   fileInput.addEventListener("change",async(e)=>{
     const f=e.target.files[0]; if(!f) return;
     fileMsg.textContent="Leyendo archivo...";
@@ -266,6 +289,16 @@ async function loadData(){
   ]);
   if(lc.data) cfg={ local_id:lc.data.id, slug:lc.data.slug, nombre:lc.data.nombre, google_review_url:lc.data.google_review_url||C.GOOGLE_REVIEW_URL, whatsapp_template:lc.data.whatsapp_template||C.WHATSAPP_TEMPLATE };
   historial=h.data||[]; negativas=n.data||[]; valoraciones=v.data||[];
+  const lb=document.getElementById("loadErr");
+  if(lb){
+    const failed = !!(h.error||n.error||v.error);
+    if(failed){
+      lb.innerHTML=""; lb.appendChild($(`<span>⚠️ No se pudo cargar todo. Revisá tu conexión.</span>`));
+      const rb=$(`<button class="btn btn-ghost mini" style="width:auto;margin:0">Reintentar</button>`);
+      rb.addEventListener("click",()=>{ rb.disabled=true; loadData(); });
+      lb.appendChild(rb); lb.classList.remove("hidden");
+    } else lb.classList.add("hidden");
+  }
   renderMetrics(); renderHist(); renderNeg(); renderPositivas(); renderProblemas();
 }
 
@@ -338,14 +371,27 @@ function renderHist(){
   document.getElementById("hcount").textContent=historial.length;
   if(!historial.length){ list.innerHTML=`<p class="empty">Todavía no mandaste ninguna valoración.</p>`; return; }
   list.innerHTML="";
-  historial.forEach(r=>list.appendChild($(`<div class="row"><span class="num">${esc(r.telefono)}</span><span class="when">${fmtWhen(r.creado_at)}</span></div>`)));
+  historial.forEach(r=>{
+    const row=$(`<div class="row"><span class="num">${esc(r.telefono)}</span><span class="row-right"><span class="when">${fmtWhen(r.creado_at)}</span><button class="hdel" title="Borrar envío">✕</button></span></div>`);
+    row.querySelector(".hdel").addEventListener("click",async(e)=>{
+      if(!confirm("¿Borrar este envío del historial? (útil para limpiar pruebas)")) return;
+      e.target.disabled=true;
+      const { data, error } = await sb.from("envios").delete().eq("id",r.id).select();
+      if(!error && data && data.length){ historial=historial.filter(x=>x.id!==r.id); renderHist(); renderMetrics(); renderPositivas(); if(cliRefresh) cliRefresh(); }
+      else if(!error){ e.target.disabled=false; alert("Falta activar el permiso para borrar envíos. Corré el SQL que te pasé en Supabase y probá de nuevo."); }
+      else { e.target.disabled=false; alert("No se pudo borrar el envío."); }
+    });
+    list.appendChild(row);
+  });
 }
 
 function renderNeg(){
   const list=document.getElementById("nlist"); if(!list) return;
   const pend=negativas.filter(r=>!r.resuelto).length;
   document.getElementById("ncount").textContent=pend;
+  document.title = pend>0 ? `(${pend}) Kuyen · Panel` : "Kuyen · Panel";
   document.querySelectorAll("#filters .chipbtn").forEach(b=>b.classList.toggle("active",b.dataset.f===filtro));
+  const byId={}; historial.forEach(e=>byId[e.id]=e);
   let data=negativas;
   if(filtro==="pendientes") data=negativas.filter(r=>!r.resuelto);
   if(filtro==="resueltas") data=negativas.filter(r=>r.resuelto);
@@ -353,9 +399,14 @@ function renderNeg(){
   list.innerHTML="";
   data.forEach(r=>{
     const stars="★".repeat(r.estrellas||0)+"☆".repeat(Math.max(0,5-(r.estrellas||0)));
+    const c = (r.envio_id && byId[r.envio_id]) ? byId[r.envio_id] : null;
+    const contactHtml = c
+      ? `<div class="neg-contact">👤 ${esc(c.nombre||"Cliente")} · <b>+${esc(c.telefono)}</b></div>`
+      : `<div class="neg-contact" style="opacity:.65">👤 Sin datos de contacto (reseña anónima)</div>`;
     const card=$(`<div class="neg ${r.resuelto?"done":""}">
       <div class="neg-head"><span class="neg-stars">${stars}</span><span class="neg-when">${fmtWhen(r.creado_at)}</span></div>
       <div class="neg-body">${esc(r.comentario)}</div>
+      ${contactHtml}
       <div class="neg-nota-row">
         <input class="neg-nota" placeholder="Nota interna (opcional)..." value="${esc(r.nota)}" />
         <button class="btn btn-ghost mini nsave">Nota</button>
@@ -378,6 +429,17 @@ function renderNeg(){
       const btn=$(`<button class="btn btn-ghost mini">Marcar como resuelta</button>`);
       btn.addEventListener("click",async()=>{ btn.disabled=true; const {error}=await sb.from("resenas_negativas").update({resuelto:true}).eq("id",r.id); if(!error){ r.resuelto=true; renderNeg(); renderMetrics(); } else btn.disabled=false; });
       actions.appendChild(btn);
+    }
+    if(c){
+      const wa=$(`<button class="btn btn-wa mini" style="width:auto">💬 Contactar</button>`);
+      wa.addEventListener("click",()=>{
+        const first=(c.nombre||"").trim().split(/\s+/)[0];
+        const msg=encodeURIComponent(`¡Hola${first?" "+first:""}! 🧡 Te escribimos desde ${cfg.nombre||"Kuyén"}. Vimos tu comentario y de verdad queremos pedirte disculpas. Nos encantaría que nos cuentes qué pasó y compensarte. 🙏`);
+        const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+        const url=isMobile?`https://wa.me/${c.telefono}?text=${msg}`:`https://web.whatsapp.com/send?phone=${c.telefono}&text=${msg}`;
+        window.open(url,"_blank","noopener");
+      });
+      actions.appendChild(wa);
     }
     const del=$(`<button class="btn btn-ghost mini del">Eliminar</button>`);
     del.addEventListener("click",async()=>{
@@ -407,7 +469,7 @@ function subscribeRealtime(){
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"valoraciones"},(p)=>{
       if(p.new.local_id===cfg.local_id){ valoraciones.unshift(p.new); renderMetrics(); renderPositivas(); }
     })
-    .subscribe();
+    .subscribe((status)=>{ setLive(status==="SUBSCRIBED"); });
 }
 
 boot();
