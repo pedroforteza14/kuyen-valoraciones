@@ -235,7 +235,7 @@ async function renderPanel(session){
     if(vieja.length && !(await saveContactos(vieja))){ localStorage.removeItem(listaKey()); localStorage.removeItem(listaKey()+"_fecha"); }
     const { data, error } = await fetchAll(()=>sb.from("clientes").select("nombre,telefono,actualizado_at").eq("local_id",cfg.local_id).order("nombre").order("telefono"));
     if(error){ fileMsg.textContent="⚠️ No se pudo cargar la lista de clientes."; return; }
-    contactos=data.map(r=>({ nombre:r.nombre||"", tel:r.telefono }));
+    contactos=data.map(r=>({ nombre:r.nombre||"", tel:clean(r.telefono) })).filter(c=>c.tel); // la base es compartida: solo dígitos
     listaFecha=data.reduce((m,r)=>!m||r.actualizado_at>m?r.actualizado_at:m,null);
     renderCli();
   }
@@ -249,7 +249,7 @@ async function renderPanel(session){
     listaCard.querySelector("#cliCount").textContent = `${data.length} · ${contactos.filter(c=>enviados.has(c.tel)).length} enviados`;
     cliList.innerHTML="";
     data.slice(0,400).forEach(c=>{
-      const row=$(`<div class="row"><span class="num" style="font-weight:600;font-family:var(--font-body)">${esc(c.nombre||c.tel)}<br><span style="font-size:12px;color:var(--ink-soft);font-weight:400">+${c.tel}</span></span></div>`);
+      const row=$(`<div class="row"><span class="num" style="font-weight:600;font-family:var(--font-body)">${esc(c.nombre||c.tel)}<br><span style="font-size:12px;color:var(--ink-soft);font-weight:400">+${esc(c.tel)}</span></span></div>`);
       if(enviados.has(c.tel)){ row.appendChild($(`<span class="chip ok">Enviado ✓</span>`)); }
       else { const b=$(`<button class="btn btn-wa mini" style="width:auto">Enviar</button>`); b.addEventListener("click",async()=>{ b.disabled=true; await sendTo(c.tel, c.nombre); }); row.appendChild(b); }
       cliList.appendChild(row);
