@@ -28,11 +28,21 @@ const envioId = _params.get("e") || null; // etiqueta del envío (para saber qui
 let googleUrl = C.GOOGLE_REVIEW_URL; // se sobreescribe con el local de la base
 let localId = null;
 if(sb){ sb.from("locales").select("id,google_review_url").eq("slug",localSlug).single().then(({data})=>{ if(data){ localId=data.id; if(data.google_review_url) googleUrl=data.google_review_url; } }); }
-async function logRating(n){
-  if(!sb) return;
-  if(!localId){ const { data } = await sb.from("locales").select("id").eq("slug",localSlug).single(); if(data) localId=data.id; }
-  if(localId){ await sb.from("valoraciones").insert({ estrellas:n, local_id:localId, envio_id:envioId }); }
+// Agrupa los toques de esta persona: si cambia de estrellas, el panel cuenta solo la última.
+const uuid=()=>crypto.randomUUID?crypto.randomUUID():"10000000-1000-4000-8000-100000000000".replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
+const visita=uuid();
+async function getLocalId(){
+  if(!localId && sb){ const { data } = await sb.from("locales").select("id").eq("slug",localSlug).single(); if(data) localId=data.id; }
+  return localId;
 }
+// Guarda cada estrella que toca (1 a 5), y con fueAGoogle=true cuando toca el botón de Google.
+async function logRating(n, fueAGoogle=false){
+  if(!sb || !(await getLocalId())) return;
+  const row={ estrellas:n, local_id:localId, envio_id:envioId, visita, fue_a_google:fueAGoogle };
+  const { error } = await sb.from("valoraciones").insert(row);
+  if(error && envioId){ await sb.from("valoraciones").insert({ ...row, envio_id:null }); } // por si el envío se borró del historial
+}
+function openGoogle(){ window.open(googleUrl,"_blank","noopener"); logRating(picked,true); }
 
 const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 10 4 20c0 0 6-1 10-5 3-3 5-7 6-11ZM7 17c1-4 4-7 8-9"/></svg>`;
 const starSVG=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2.5l2.9 6 6.6.8-4.9 4.5 1.3 6.5L12 17.9 6.1 20.3l1.3-6.5L2.5 9.3l6.6-.8L12 2.5Z"/></svg>`;
@@ -52,7 +62,7 @@ app.appendChild($(`<p class="foot">Kuyén · churros &amp; chipa 🧡</p>`));
 
 const labels=["","Muy mala","Mala","Regular","Buena","¡Excelente!"];
 const starsEl=card.querySelector("#stars"), hintEl=card.querySelector("#hint"), resultEl=card.querySelector("#result");
-let picked=0, ratedPos=false;
+let picked=0;
 for(let i=1;i<=5;i++){
   const b=$(`<button class="star" aria-label="${i} estrella${i>1?"s":""}">${starSVG}</button>`);
   b.addEventListener("mouseenter",()=>paint(i));
@@ -61,12 +71,18 @@ for(let i=1;i<=5;i++){
   starsEl.appendChild(b);
 }
 function paint(n){[...starsEl.children].forEach((s,idx)=>s.classList.toggle("on",idx<n));hintEl.textContent=n?labels[n]:"Elegí de 1 a 5 estrellas";}
-function choose(n){resultEl.innerHTML=""; if(n>=4){ if(!ratedPos){ logRating(n); ratedPos=true; } resultEl.appendChild(positive(n)); } else { resultEl.appendChild(negative(n)); } }
+function choose(n){
+  logRating(n);
+  const draft=(resultEl.querySelector("#cmt")||{}).value||""; // si cambia de estrella, no perder lo que ya escribió
+  resultEl.innerHTML="";
+  if(n>=4){ resultEl.appendChild(positive(n)); }
+  else { resultEl.appendChild(negative(n)); if(draft) resultEl.querySelector("#cmt").value=draft; }
+}
 
 function positive(n){
   const w=$(`<div class="fade"><p class="lead" style="margin-top:20px">Mil gracias 🧡<br>Nos ayudás mucho dejando tu valoración en Google:</p></div>`);
   const a=$(`<button class="btn btn-primary btn-big">${gLogo}<span>Dejar mi reseña en Google</span></button>`);
-  a.addEventListener("click",()=>{ window.open(googleUrl,"_blank","noopener"); });
+  a.addEventListener("click",openGoogle);
   w.appendChild(a);
   w.appendChild($(`<p class="note">💡 Si Google no te deja publicar, revisá que estés con tu cuenta de Google iniciada. Si no, buscá <b>"${C.BUSINESS_NAME}"</b> en Google Maps y dejá tu reseña ahí 🙏</p>`));
   return w;
@@ -85,13 +101,18 @@ function negative(n){
     if(!comentario){ err.textContent="Contanos brevemente qué pasó 🙏"; return; }
     send.disabled=true; send.textContent="Enviando...";
     if(!sb){ err.textContent="Falta configurar Supabase en config.js"; send.disabled=false; send.textContent="Enviar en privado"; return; }
-    if(!localId){ const rr=await sb.from("locales").select("id").eq("slug",localSlug).single(); localId=rr.data?rr.data.id:null; }
-    let ins = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId, envio_id:envioId });
-    if(ins.error){ ins = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId }); } // fallback por si la columna envio_id aún no existe
+    await getLocalId();
+    let ins = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId, envio_id:envioId, visita });
+    if(ins.error){ ins = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId, visita }); } // por si el envío se borró del historial
+    if(ins.error){ ins = await sb.from("resenas_negativas").insert({ estrellas:n, comentario, local_id:localId }); } // fallback por si falta la columna visita
     if(ins.error){ err.textContent="No se pudo enviar. Probá de nuevo en un momento."; send.disabled=false; send.textContent="Enviar en privado"; return; }
     w.innerHTML=`<p class="lead fade" style="margin-top:24px;text-align:center">¡Gracias por avisarnos! 🌿<br>Lo vamos a tener muy en cuenta.</p>`;
   });
   w.appendChild(send);
+  // Google no permite filtrar quién puede dejar reseña: el link público queda disponible para todos.
+  const pub=$(`<p class="note">¿Preferís dejar tu opinión pública? <a href="#" class="glink">Dejala en Google</a></p>`);
+  pub.querySelector(".glink").addEventListener("click",e=>{ e.preventDefault(); openGoogle(); });
+  w.appendChild(pub);
   return w;
 }
 </script>

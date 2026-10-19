@@ -26,12 +26,22 @@ const fmtWhen=(iso)=>{const d=new Date(iso);return d.toLocaleDateString("es-AR")
 const clean=(s)=>String(s||"").replace(/[^\d]/g,"");
 function normAR(raw){ let d=String(raw==null?"":raw).replace(/[^\d]/g,""); if(!d) return ""; if(d.startsWith("549")) return d; if(d.startsWith("54")) return "549"+d.slice(2); return "549"+d.replace(/^0/,""); }
 const esc=(s)=>String(s==null?"":s).replace(/[<>&"']/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;","'":"&#39;"}[c]));
+// Supabase devuelve como máximo 1000 filas por consulta: pide de a páginas hasta traer todo.
+async function fetchAll(query){
+  const out=[];
+  for(let from=0;;from+=1000){
+    const { data, error } = await query().range(from, from+999);
+    if(error) return { data:null, error };
+    out.push(...data);
+    if(data.length<1000) return { data:out, error:null };
+  }
+}
 
 const LEAF=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 4C10 4 4 10 4 20c0 0 6-1 10-5 3-3 5-7 6-11ZM7 17c1-4 4-7 8-9"/></svg>`;
 const waLogo=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.2s-.7 1-.9 1.2c-.2.2-.3.2-.6.1-1.7-.8-2.8-1.5-3.9-3.4-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5-.1-.1-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.3 5.2 4.6 2 .8 2.7.9 3.7.8.6-.1 1.7-.7 2-1.4.2-.7.2-1.2.2-1.4-.1-.1-.3-.2-.6-.3ZM12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Z"/></svg>`;
 
 let cfg={ local_id:null, slug:"agronomia", nombre:"", google_review_url:C.GOOGLE_REVIEW_URL, whatsapp_template:C.WHATSAPP_TEMPLATE };
-let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas", panelActive=false, refreshBound=false, cliRefresh=null;
+let historial=[], negativas=[], valoraciones=[], channel=null, audioCtx=null, filtro="todas", panelActive=false, refreshBound=false, cliRefresh=null, cliReload=null;
 
 function brand(){ return $(`<div class="brand"><img class="logo" src="img/logo.png" alt="Kuyén"></div>`); }
 function setLive(on){ const l=document.getElementById("live"), t=document.getElementById("liveTxt"); if(!l) return; l.classList.toggle("on",on); if(t) t.textContent=on?"En vivo":"Reconectando…"; }
@@ -42,6 +52,7 @@ async function refreshOnFocus(){
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderLogin(); return; }
   try{ await loadData(); }catch(e){}
+  if(cliReload) cliReload(); // la lista de clientes la comparte todo el equipo
 }
 function bindRefresh(){
   if(refreshBound) return; refreshBound=true;
@@ -96,7 +107,7 @@ async function renderPanel(session){
   const ratingUrl = () => location.origin + "/?local=" + (cfg.slug || "agronomia");
 
   // MÉTRICAS
-  const mcard=$(`<div class="card"><div class="sec-title">Resumen del mes</div><div class="metrics" id="metrics"></div></div>`);
+  const mcard=$(`<div class="card"><div class="sec-title">Resumen del mes</div><div class="metrics" id="metrics"></div><p class="note" id="metricsHist" style="text-align:left"></p></div>`);
   // PEDIR VALORACIÓN
   const sendCard=$(`<div class="card">
     <span class="badge">Pedir valoración</span>
@@ -204,15 +215,34 @@ async function renderPanel(session){
     waBtn.disabled=false;
   });
 
-  // Lista de clientes (Excel/CSV) — independiente por local
-  let contactos=[];
-  const listaKey=()=>"kuyen_lista_"+(cfg.slug||"def");
-  function loadLista(){ try{ contactos=JSON.parse(localStorage.getItem(listaKey())||"[]"); }catch(e){ contactos=[]; } renderCli(); }
+  // Lista de clientes (Excel/CSV) — guardada en la base, la ve todo el equipo del local
+  let contactos=[], listaFecha=null;
+  const listaKey=()=>"kuyen_lista_"+(cfg.slug||"def"); // donde vivía antes la lista (solo en este navegador)
   const fileInput=listaCard.querySelector("#fileInput"), fileMsg=listaCard.querySelector("#fileMsg"), listaWrap=listaCard.querySelector("#listaWrap"), cliList=listaCard.querySelector("#cliList"), buscarCli=listaCard.querySelector("#buscarCli");
+  // Guarda contactos {nombre, tel} sin duplicar teléfonos. Si un contacto viene sin nombre, no pisa el que ya estaba.
+  async function saveContactos(lista){
+    const porTel=new Map(); lista.forEach(c=>{ const prev=porTel.get(c.tel); porTel.set(c.tel,{ tel:c.tel, nombre:c.nombre||(prev&&prev.nombre)||"" }); });
+    const ahora=new Date().toISOString();
+    const fila=c=>({ local_id:cfg.local_id, telefono:c.tel, nombre:c.nombre||null, actualizado_at:ahora });
+    const conNombre=[...porTel.values()].filter(c=>c.nombre).map(fila), sinNombre=[...porTel.values()].filter(c=>!c.nombre).map(fila);
+    for(let i=0;i<conNombre.length;i+=500){ const { error } = await sb.from("clientes").upsert(conNombre.slice(i,i+500),{ onConflict:"local_id,telefono" }); if(error) return error; }
+    for(let i=0;i<sinNombre.length;i+=500){ const { error } = await sb.from("clientes").upsert(sinNombre.slice(i,i+500),{ onConflict:"local_id,telefono", ignoreDuplicates:true }); if(error) return error; }
+    return null;
+  }
+  async function loadLista(){
+    // Si este navegador tenía una lista guardada de antes, la sube a la base una sola vez.
+    let vieja=[]; try{ vieja=JSON.parse(localStorage.getItem(listaKey())||"[]"); }catch(e){}
+    if(vieja.length && !(await saveContactos(vieja))){ localStorage.removeItem(listaKey()); localStorage.removeItem(listaKey()+"_fecha"); }
+    const { data, error } = await fetchAll(()=>sb.from("clientes").select("nombre,telefono,actualizado_at").eq("local_id",cfg.local_id).order("nombre").order("telefono"));
+    if(error){ fileMsg.textContent="⚠️ No se pudo cargar la lista de clientes."; return; }
+    contactos=data.map(r=>({ nombre:r.nombre||"", tel:r.telefono }));
+    listaFecha=data.reduce((m,r)=>!m||r.actualizado_at>m?r.actualizado_at:m,null);
+    renderCli();
+  }
   function renderCli(){
     if(!contactos.length){ listaWrap.classList.add("hidden"); return; }
     listaWrap.classList.remove("hidden");
-    const fe=document.getElementById("listaFecha"), fch=localStorage.getItem(listaKey()+"_fecha"); if(fe) fe.textContent = fch ? "📅 Planilla subida: "+fmtWhen(fch) : "";
+    const fe=document.getElementById("listaFecha"); if(fe) fe.textContent = listaFecha ? "📅 Última planilla subida: "+fmtWhen(listaFecha) : "";
     const enviados=new Set(historial.map(h=>clean(h.telefono)));
     const q=(buscarCli.value||"").toLowerCase(), qd=q.replace(/[^\d]/g,"");
     const data=contactos.filter(c=> !q || (c.nombre||"").toLowerCase().includes(q) || (qd && c.tel.includes(qd)));
@@ -225,27 +255,42 @@ async function renderPanel(session){
       cliList.appendChild(row);
     });
   }
-  cliRefresh=renderCli;
+  cliRefresh=renderCli; cliReload=loadLista;
   fileInput.addEventListener("change",async(e)=>{
     const f=e.target.files[0]; if(!f) return;
     fileMsg.textContent="Leyendo archivo...";
     try{
-      const wb=XLSX.read(await f.arrayBuffer());
+      let wb;
+      if(/\.csv$/i.test(f.name)){ // los CSV pueden venir en UTF-8 o en el formato viejo de Excel: así no se rompen los acentos
+        const buf=await f.arrayBuffer(); let txt;
+        try{ txt=new TextDecoder("utf-8",{fatal:true}).decode(buf); }catch(e){ txt=new TextDecoder("windows-1252").decode(buf); }
+        wb=XLSX.read(txt.replace(/^﻿/,""),{type:"string"});
+      } else wb=XLSX.read(await f.arrayBuffer());
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
       const norm=s=>String(s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
       const keys=Object.keys(rows[0]||{});
       const telKey=keys.find(k=>/tel|cel|whats|phone/.test(norm(k)));
       const nameKey=keys.find(k=>/nombre|cliente|name/.test(norm(k)));
       if(!telKey){ fileMsg.textContent="⚠️ No encontré una columna de teléfono (tiene que tener un encabezado tipo 'Teléfono')."; return; }
-      contactos = rows.map(r=>({ nombre:String(r[nameKey]||"").trim(), tel:normAR(r[telKey]) })).filter(c=>c.tel.length>=10);
-      localStorage.setItem(listaKey(), JSON.stringify(contactos));
-      localStorage.setItem(listaKey()+"_fecha", new Date().toISOString());
-      fileMsg.textContent = `✓ ${contactos.length} contactos cargados.`;
-      renderCli();
+      const nuevos = rows.map(r=>({ nombre:String(r[nameKey]||"").trim(), tel:normAR(r[telKey]) })).filter(c=>c.tel.length>=10);
+      if(!nuevos.length){ fileMsg.textContent="⚠️ No encontré teléfonos válidos en el archivo."; return; }
+      const yaEstaban=new Set(contactos.map(c=>c.tel)), sumados=new Set(nuevos.filter(c=>!yaEstaban.has(c.tel)).map(c=>c.tel)).size;
+      fileMsg.textContent="Guardando...";
+      if(await saveContactos(nuevos)){ fileMsg.textContent="⚠️ No se pudo guardar la lista. Probá de nuevo."; return; }
+      fileInput.value="";
+      await loadLista();
+      fileMsg.textContent = `✓ ${new Set(nuevos.map(c=>c.tel)).size} contactos en el archivo · ${sumados} nuevos.`;
     }catch(err){ fileMsg.textContent="⚠️ No se pudo leer el archivo. ¿Es un .xlsx o .csv válido?"; }
   });
   buscarCli.addEventListener("input",renderCli);
-  listaCard.querySelector("#cliClear").addEventListener("click",()=>{ contactos=[]; localStorage.removeItem(listaKey()); localStorage.removeItem(listaKey()+"_fecha"); fileMsg.textContent=""; fileInput.value=""; renderCli(); });
+  listaCard.querySelector("#cliClear").addEventListener("click",async(e)=>{
+    if(!confirm("¿Borrar toda la lista de clientes de este local? Se borra para todo el equipo.")) return;
+    e.target.disabled=true;
+    const { error } = await sb.from("clientes").delete().eq("local_id",cfg.local_id);
+    e.target.disabled=false;
+    if(error){ alert("No se pudo borrar la lista."); return; }
+    contactos=[]; listaFecha=null; fileMsg.textContent=""; fileInput.value=""; renderCli();
+  });
 
   // copiar historial
   histCard.querySelector("#hcopy").addEventListener("click",async(e)=>{
@@ -281,12 +326,14 @@ async function renderPanel(session){
 async function loadData(){
   const prof = await sb.from("perfiles").select("local_id").maybeSingle();
   const lid = prof.data ? prof.data.local_id : null;
-  const [lc,h,n,v] = await Promise.all([
+  const valQuery = (cols) => fetchAll(()=>sb.from("valoraciones").select(cols).order("creado_at",{ascending:false}).order("id"));
+  const [lc,h,n,v0] = await Promise.all([
     lid ? sb.from("locales").select("*").eq("id",lid).single() : Promise.resolve({data:null}),
-    sb.from("envios").select("*").order("creado_at",{ascending:false}),
-    sb.from("resenas_negativas").select("*").order("creado_at",{ascending:false}),
-    sb.from("valoraciones").select("estrellas,creado_at,local_id,envio_id").order("creado_at",{ascending:false}),
+    fetchAll(()=>sb.from("envios").select("*").order("creado_at",{ascending:false}).order("id")),
+    fetchAll(()=>sb.from("resenas_negativas").select("*").order("creado_at",{ascending:false}).order("id")),
+    valQuery("id,estrellas,creado_at,local_id,envio_id,visita,fue_a_google"),
   ]);
+  const v = v0.error ? await valQuery("id,estrellas,creado_at,local_id,envio_id") : v0; // por si todavía no se corrió el parche SQL
   if(lc.data) cfg={ local_id:lc.data.id, slug:lc.data.slug, nombre:lc.data.nombre, google_review_url:lc.data.google_review_url||C.GOOGLE_REVIEW_URL, whatsapp_template:lc.data.whatsapp_template||C.WHATSAPP_TEMPLATE };
   historial=h.data||[]; negativas=n.data||[]; valoraciones=v.data||[];
   const lb=document.getElementById("loadErr");
@@ -332,10 +379,27 @@ function renderProblemas(){
   if(otros){ box.appendChild($(`<div class="prob-row"><div class="prob-head"><span>🗂️ Otros</span><b>${otros}</b></div></div>`)); }
 }
 
+// Una fila por persona que valoró. Cada "visita" a la página puede tener varias filas
+// (cambió de estrella o tocó Google): vale la última estrella y si fue a Google alguna vez.
+// Las negativas viejas (de antes de guardar todas las estrellas) se suman desde su tabla.
+function ratingsUnicas(){
+  const porVisita=new Map(), sueltas=[];
+  [...valoraciones].sort((a,b)=>new Date(a.creado_at)-new Date(b.creado_at)).forEach(v=>{
+    if(!v.visita){ sueltas.push(v); return; }
+    const prev=porVisita.get(v.visita);
+    porVisita.set(v.visita,{ ...v, fue_a_google: !!(v.fue_a_google || (prev && prev.fue_a_google)) });
+  });
+  const negSueltas=negativas.filter(r=>!r.visita || !porVisita.has(r.visita))
+    .map(r=>({ estrellas:r.estrellas, creado_at:r.creado_at, envio_id:r.envio_id, fue_a_google:false }));
+  return [...porVisita.values(), ...sueltas, ...negSueltas];
+}
+
 function renderPositivas(){
   const box=document.getElementById("posList"); if(!box) return;
   const byId={}; historial.forEach(e=>byId[e.id]=e);
-  const pos=valoraciones.filter(v=>(v.estrellas||0)>=4 && v.envio_id && byId[v.envio_id]).map(v=>({e:byId[v.envio_id], estrellas:v.estrellas, at:v.creado_at}));
+  const pos=ratingsUnicas().filter(v=>(v.estrellas||0)>=4 && v.envio_id && byId[v.envio_id])
+    .sort((a,b)=>new Date(b.creado_at)-new Date(a.creado_at))
+    .map(v=>({e:byId[v.envio_id], estrellas:v.estrellas, at:v.creado_at}));
   const cc=document.getElementById("posCount"); if(cc) cc.textContent=pos.length;
   if(!pos.length){ box.innerHTML=`<p class="empty">Todavía nadie valoró positivo desde un envío con nombre.</p>`; return; }
   box.innerHTML="";
@@ -348,22 +412,24 @@ function renderPositivas(){
 function renderMetrics(){
   const box=document.getElementById("metrics"); if(!box) return;
   const now=new Date(), mStart=new Date(now.getFullYear(),now.getMonth(),1);
-  const enviosMes=historial.filter(r=>new Date(r.creado_at)>=mStart).length;
-  const posVals = valoraciones.filter(r=>(r.estrellas||0)>=4); // positivas (van a Google)
-  const positivas = posVals.length;
-  const negs = negativas.length; // negativas = las reseñas de la base (se descuentan al borrar)
-  const total = positivas + negs;
-  const sumStars = posVals.reduce((a,r)=>a+(r.estrellas||0),0) + negativas.reduce((a,r)=>a+(r.estrellas||0),0);
-  const prom = total ? sumStars/total : 0;
-  const pctPos = total ? Math.round(positivas/total*100) : 0;
+  const delMes=r=>new Date(r.creado_at)>=mStart;
+  const resumen=(lista)=>{
+    const n=lista.length, pos=lista.filter(r=>(r.estrellas||0)>=4).length;
+    return { n, prom: n ? lista.reduce((a,r)=>a+(r.estrellas||0),0)/n : 0, pct: n ? Math.round(pos/n*100) : 0, google: lista.filter(r=>r.fue_a_google).length };
+  };
+  const todas=ratingsUnicas(), mes=resumen(todas.filter(delMes)), hist=resumen(todas);
+  const enviosMes=historial.filter(delMes).length;
   const pend = negativas.filter(r=>!r.resuelto).length;
   const tile=(n,l,warn)=>`<div class="tile${warn?' warn-tile':''}"><div class="n">${n}</div><div class="l">${l}</div></div>`;
   box.innerHTML =
-    tile(enviosMes,"Pedidos enviados (mes)") +
-    tile(total,"Valoraciones recibidas") +
-    tile(total?prom.toFixed(1)+"★":"—","Promedio") +
-    tile(total?pctPos+"%":"—","Positivas") +
+    tile(enviosMes,"Pedidos enviados") +
+    tile(mes.n,"Valoraciones") +
+    tile(mes.n?mes.prom.toFixed(1)+"★":"—","Promedio") +
+    tile(mes.n?mes.pct+"%":"—","Positivas (4-5★)") +
+    tile(mes.google,"Fueron a Google") +
     tile(pend, pend?"Negativas pendientes":"Negativas al día", pend>0);
+  const h=document.getElementById("metricsHist");
+  if(h) h.textContent = hist.n ? `Histórico: ${hist.n} valoraciones · ${hist.prom.toFixed(1)}★ promedio · ${hist.pct}% positivas` : "";
 }
 
 function renderHist(){
@@ -446,7 +512,11 @@ function renderNeg(){
       if(!confirm("¿Eliminar esta reseña? No se puede deshacer.")) return;
       del.disabled=true;
       const {error}=await sb.from("resenas_negativas").delete().eq("id",r.id);
-      if(!error){ negativas=negativas.filter(x=>x.id!==r.id); renderNeg(); renderMetrics(); renderProblemas(); }
+      if(!error && r.visita){ // también saca su estrella del promedio (útil para limpiar pruebas)
+        const vd = await sb.from("valoraciones").delete().eq("visita",r.visita);
+        if(!vd.error) valoraciones=valoraciones.filter(v=>v.visita!==r.visita);
+      }
+      if(!error){ negativas=negativas.filter(x=>x.id!==r.id); renderNeg(); renderMetrics(); renderProblemas(); renderPositivas(); }
       else { del.disabled=false; alert("No se pudo eliminar."); }
     });
     actions.appendChild(del);

@@ -1,7 +1,7 @@
 # Kuyen · Puesta en marcha (paso a paso)
 
 Son 3 pasos: **Supabase** (la base), **config** (2 datos) y **Vercel** (publicar).
-Datos de acceso al panel: **admin@kuyen.com** / **[borrada]**
+Acceso al panel: el usuario que crees en el paso 1. **No anotes la contraseña en este archivo.**
 
 ---
 
@@ -12,7 +12,7 @@ Datos de acceso al panel: **admin@kuyen.com** / **[borrada]**
    **`supabase-setup.sql`** → botón **Run**. (Crea las tablas y la seguridad.)
 3. Menú izquierdo → **Authentication** → **Users** → **Add user** → **Create new user**:
    - Email: `admin@kuyen.com`
-   - Password: `[borrada]`
+   - Password: una contraseña segura (guardala en un gestor, no acá)
    - Tildá **Auto Confirm User** ✅ → **Create user**
 4. Menú izquierdo → **Project Settings** (el engranaje) → **API**. Copiá:
    - **Project URL** (ej: `https://abcd.supabase.co`)
@@ -54,7 +54,7 @@ de GitHub y en **vercel.com → Add New → Project → Import** elegís el repo
 
 ## PASO 4 — Probar que anda
 
-- **Panel:** abrí `https://tu-sitio.vercel.app/panel` → entrá con `admin@kuyen.com` / `[borrada]`.
+- **Panel:** abrí `https://tu-sitio.vercel.app/panel` → entrá con `admin@kuyen.com` y su contraseña.
 - **Cliente:** desde el panel, cargá tu propio celu y mandate el WhatsApp → tocá el link →
   probá 5 estrellas (te lleva a Google) y 2 estrellas (dejá un comentario).
 - Volvé al panel: la reseña negativa tiene que aparecer en **"Reseñas negativas"** (en vivo),
